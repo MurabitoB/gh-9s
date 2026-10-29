@@ -102,6 +102,11 @@ func (m model) View() string {
 	if m.view == viewIssue {
 		title += " issue=#" + m.issue
 	}
+	if m.view == viewDiscussions {
+		if name := discFilterName(m.discFilter); name != "" {
+			title += " filter=" + name
+		}
+	}
 	if m.view == viewDiscussions && m.discCatName != "" {
 		title += " category=" + m.discCatName
 	}

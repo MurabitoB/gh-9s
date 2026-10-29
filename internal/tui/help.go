@@ -49,9 +49,9 @@ func (m model) helpGroups() []helpGroup {
 	case viewIssues:
 		gs = append(gs, helpGroup{"Issues", []helpKey{{"j k", "move"}, {"enter", "open the issue"}, {"a", "send to a coding agent (asks first)"}, {"O C A", "open / closed / all"}, {"u", "assigned to me"}, {"m", "opened by me"}, {"M", "add to / remove from Projects (asks first)"}, {"f", "pin / unpin this repo"}, {"o", "open in the browser"}}})
 	case viewDiscussions:
-		gs = append(gs, helpGroup{"Discussions", []helpKey{{"j k", "move"}, {"enter", "open the discussion"}, {"c", "narrow the list to a category (or all)"}, {"o", "open in the browser"}}})
+		gs = append(gs, helpGroup{"Discussions", []helpKey{{"j k", "move"}, {"enter", "open the discussion"}, {"O C A", "open / closed / all"}, {"u a", "only unanswered / only answered (again: both)"}, {"m", "read more discussions"}, {"c", "narrow the list to a category (or all)"}, {"o", "open in the browser"}}})
 	case viewDiscussion:
-		gs = append(gs, helpGroup{"Discussion", []helpKey{{"n N", "select the next / previous comment or reply"}, {"C", "comment (asks first)"}, {"r", "reply in the selected comment's thread (asks first)"}, {"o", "open in the browser"}}})
+		gs = append(gs, helpGroup{"Discussion", []helpKey{{"n N", "select the next / previous comment or reply"}, {"C", "comment (asks first)"}, {"r", "reply in the selected comment's thread (asks first)"}, {"x", "close, with a reason"}, {"X", "reopen"}, {"A", "mark the selected comment as the answer / remove the mark (asks first)"}, {"L", "lock / unlock (asks first)"}, {"o", "open in the browser"}}})
 		gs = append(gs, helpGroup{"Scroll", helpScroll})
 	case viewWiki:
 		gs = append(gs, helpGroup{"Wiki", []helpKey{{"j k", "move"}, {"enter", "read the page"}, {"e", "edit the page in $EDITOR (then asks for a commit message)"}, {"n", "new page (asks for the title, then opens the editor)"}, {"x", "delete the page (asks first)"}, {"/", "filter by title"}, {"o", "open in the browser"}, {"R", "update from GitHub"}}})

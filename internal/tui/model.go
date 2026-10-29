@@ -78,6 +78,8 @@ type model struct {
 	issue        string            // the issue shown
 	discCat      string            // the discussion category the list is narrowed to ("" = all): its id
 	discCatName  string            // and its name, for the title
+	discFilter   ghcli.DiscFilter  // the state and answer filters of the list (Category is discCat, kept apart)
+	discLimit    int               // how many discussions the list reads (0 = the first page)
 	disc         string            // the discussion shown
 	discBusy     bool              // a discussion comment is on its way; one at a time
 	wikiPage     string            // the wiki page file shown
