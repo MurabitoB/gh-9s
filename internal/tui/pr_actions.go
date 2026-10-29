@@ -18,6 +18,8 @@ var (
 	reopenPR  = ghcli.ReopenPR
 	readyPR   = ghcli.ReadyPR
 	editPR    = ghcli.EditPR
+
+	updatePRBranch = ghcli.UpdatePRBranch
 )
 
 // prAction is a PR action being put together through dialogs. It remembers the repo and

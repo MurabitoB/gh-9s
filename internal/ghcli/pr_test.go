@@ -172,6 +172,7 @@ func TestPRStateArgs(t *testing.T) {
 		{"close", ClosePRArgs(r, "7"), []string{"pr", "close", "7", "-R", "ghe.example.com/acme/api"}},
 		{"reopen", ReopenPRArgs(r, "7"), []string{"pr", "reopen", "7", "-R", "ghe.example.com/acme/api"}},
 		{"ready", ReadyPRArgs(r, "7", false), []string{"pr", "ready", "7", "-R", "ghe.example.com/acme/api"}},
+		{"update-branch", UpdatePRBranchArgs(r, "7"), []string{"pr", "update-branch", "7", "-R", "ghe.example.com/acme/api"}},
 		{"draft", ReadyPRArgs(r, "7", true), []string{"pr", "ready", "7", "--undo", "-R", "ghe.example.com/acme/api"}},
 	}
 	for _, c := range cases {

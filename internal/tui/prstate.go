@@ -7,7 +7,7 @@ import (
 )
 
 // prStateKey handles the keys of the PR detail that change the PR itself: x close, X reopen,
-// D draft / ready for review, l labels, s assignees. Each says why when it does not apply.
+// D draft / ready for review, U update the branch, l labels, s assignees. Each says why when it does not apply.
 func (m model) prStateKey(key string, d ghcli.PRDetail) (model, tea.Cmd) {
 	note := func(text string) (model, tea.Cmd) {
 		m.status = styDim.Render(text)
@@ -47,6 +47,12 @@ func (m model) prStateKey(key string, d ghcli.PRDetail) (model, tea.Cmd) {
 			return m.withDialog(newConfirmDialog("pr.ready", "Mark "+p.label+" ready for review?", d.Title+"\n\nReviewers are notified.")), nil
 		}
 		return m.withDialog(newConfirmDialog("pr.draft", "Turn "+p.label+" into a draft?", d.Title)), nil
+	case "U":
+		if d.State != "OPEN" {
+			return note("only an open PR's branch can be updated")
+		}
+		m, p := m.startPRAction()
+		return m.withDialog(newConfirmDialog("pr.update", "Update "+p.label+"?", "Merge "+orDash(d.BaseRef)+" into "+orDash(d.HeadRef)+". This adds a commit to the PR's branch.")), nil
 	}
 	// l, s: fetch the repo's labels or assignable users, then show them with the PR's own ticked.
 	m, p := m.startPRAction()
@@ -83,6 +89,7 @@ func init() {
 	}
 	dialogHandlers["pr.close"] = done("closed", func(p *prAction) error { return closePR(p.target, p.number) })
 	dialogHandlers["pr.ready"] = done("marked ready for review:", func(p *prAction) error { return readyPR(p.target, p.number, false) })
+	dialogHandlers["pr.update"] = done("updated the branch of", func(p *prAction) error { return updatePRBranch(p.target, p.number) })
 	dialogHandlers["pr.draft"] = done("turned into a draft:", func(p *prAction) error { return readyPR(p.target, p.number, true) })
 	edit := func(what string, labels bool) func(model, dialogResultMsg) (model, tea.Cmd) {
 		return func(m model, r dialogResultMsg) (model, tea.Cmd) {

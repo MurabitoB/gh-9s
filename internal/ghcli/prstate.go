@@ -15,6 +15,11 @@ func ReadyPRArgs(r RepoRef, number string, undo bool) []string {
 	return Scoped(r, a...)
 }
 
+// UpdatePRBranchArgs is `gh pr update-branch`, which merges the base branch into the PR's branch.
+func UpdatePRBranchArgs(r RepoRef, number string) []string {
+	return Scoped(r, "pr", "update-branch", number)
+}
+
 // EditPRArgs is the `gh pr edit` command for label and assignee changes (see EditIssueArgs).
 func EditPRArgs(r RepoRef, number string, addLabels, removeLabels, addAssignees, removeAssignees []string) []string {
 	return editArgs("pr", r, number, addLabels, removeLabels, addAssignees, removeAssignees)
@@ -41,5 +46,11 @@ func ReadyPR(r RepoRef, number string, undo bool) error {
 // EditPR changes the PR's labels and assignees.
 func EditPR(r RepoRef, number string, addLabels, removeLabels, addAssignees, removeAssignees []string) error {
 	_, err := Run(EditPRArgs(r, number, addLabels, removeLabels, addAssignees, removeAssignees)...)
+	return err
+}
+
+// UpdatePRBranch brings the PR's branch up to date with its base.
+func UpdatePRBranch(r RepoRef, number string) error {
+	_, err := Run(UpdatePRBranchArgs(r, number)...)
 	return err
 }

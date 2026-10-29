@@ -12,6 +12,7 @@ import (
 type prStateFakes struct {
 	closes, reopens []string
 	readies, drafts []string
+	updates         []string
 	edits           []editCall
 	labels          []string
 	assignees       []string
@@ -21,7 +22,8 @@ type prStateFakes struct {
 func installPRState(t *testing.T) *prStateFakes {
 	t.Helper()
 	f := &prStateFakes{labels: []string{"bug", "docs", "wontfix"}, assignees: []string{"erin", "frank"}}
-	oldClose, oldReopen, oldReady, oldEdit := closePR, reopenPR, readyPR, editPR
+	oldClose, oldReopen, oldReady, oldEdit, oldUpdate := closePR, reopenPR, readyPR, editPR, updatePRBranch
+	updatePRBranch = func(r ghcli.RepoRef, n string) error { f.updates = append(f.updates, n); return f.err }
 	oldLabels, oldAssignees := listLabels, listAssignees
 	closePR = func(r ghcli.RepoRef, n string) error { f.closes = append(f.closes, n); return f.err }
 	reopenPR = func(r ghcli.RepoRef, n string) error { f.reopens = append(f.reopens, n); return f.err }
@@ -40,7 +42,7 @@ func installPRState(t *testing.T) *prStateFakes {
 	listLabels = func(ghcli.RepoRef) ([]string, error) { return f.labels, nil }
 	listAssignees = func(ghcli.RepoRef) ([]string, error) { return f.assignees, nil }
 	t.Cleanup(func() {
-		closePR, reopenPR, readyPR, editPR = oldClose, oldReopen, oldReady, oldEdit
+		closePR, reopenPR, readyPR, editPR, updatePRBranch = oldClose, oldReopen, oldReady, oldEdit, oldUpdate
 		listLabels, listAssignees = oldLabels, oldAssignees
 	})
 	return f
@@ -176,5 +178,22 @@ func TestPRDetailFooterAndHelpNameTheNewKeys(t *testing.T) {
 	m := prDetailScreen(t, withState("OPEN", false))
 	if v := m.View(); !strings.Contains(v, "x: close") || !strings.Contains(v, "D: draft") {
 		t.Errorf("footer lacks the new keys:\n%s", v)
+	}
+}
+
+func TestUUpdatesTheBranchAfterAskingAndOnlyOnAnOpenPR(t *testing.T) {
+	f := installPRState(t)
+	m := keyAll(prDetailScreen(t, withState("OPEN", false)), "U")
+	if m.dlg == nil || !strings.Contains(m.View(), "fix/retry") || !strings.Contains(m.View(), "main") || len(f.updates) != 0 {
+		t.Fatalf("want a question naming both branches, nothing sent yet; dialog=%v", m.dlg != nil)
+	}
+	m = keyAll(m, "y")
+	if !reflect.DeepEqual(f.updates, []string{"482"}) || !strings.Contains(m.status, "updated") {
+		t.Errorf("updates=%v status=%q", f.updates, m.status)
+	}
+	f = installPRState(t)
+	m = keyAll(prDetailScreen(t, withState("MERGED", false)), "U")
+	if m.dlg != nil || len(f.updates) != 0 || !strings.Contains(m.status, "open") {
+		t.Errorf("dialog=%v updates=%v status=%q", m.dlg != nil, f.updates, m.status)
 	}
 }
