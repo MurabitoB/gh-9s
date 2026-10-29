@@ -36,12 +36,20 @@ type PRDetail struct {
 // DISMISSED).
 type Reviewer struct{ Name, State string }
 
-// PRFilter narrows the PR list. The zero value lists everything.
-type PRFilter struct{ Mine, ReviewRequested bool }
+// PRFilter narrows the PR list. The zero value lists the open PRs. State is "open", "closed",
+// "merged" or "all" ("" means open).
+type PRFilter struct {
+	State                 string
+	Mine, ReviewRequested bool
+}
 
 // PRFilterArgs are the extra `gh pr list` flags for f.
 func PRFilterArgs(f PRFilter) []string {
 	var a []string
+	switch f.State { // only the known states get through, so a stray value can never turn into another flag
+	case "closed", "merged", "all":
+		a = append(a, "--state", f.State)
+	}
 	if f.Mine {
 		a = append(a, "--author", "@me")
 	}

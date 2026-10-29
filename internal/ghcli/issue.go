@@ -110,7 +110,11 @@ func ReopenIssueArgs(r RepoRef, number string) []string {
 // gh reads the label flags as comma-separated lists, so label names are quoted CSV-style when they
 // hold a comma, a quote or a line break (user logins cannot).
 func EditIssueArgs(r RepoRef, number string, addLabels, removeLabels, addAssignees, removeAssignees []string) []string {
-	a := []string{"issue", "edit", number}
+	return editArgs("issue", r, number, addLabels, removeLabels, addAssignees, removeAssignees)
+}
+
+func editArgs(kind string, r RepoRef, number string, addLabels, removeLabels, addAssignees, removeAssignees []string) []string {
+	a := []string{kind, "edit", number}
 	for _, group := range []struct {
 		flag  string
 		names []string

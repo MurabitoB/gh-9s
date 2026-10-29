@@ -22,3 +22,12 @@ func TestPRRowsMarkTheLocalBranchAndDrafts(t *testing.T) {
 		t.Errorf("cells = %q", c)
 	}
 }
+
+func TestPRRowsMarkClosedAndMergedPRs(t *testing.T) {
+	tbl := prRows([]prListItem{{Number: 3, Title: "gone", State: "CLOSED"}, {Number: 4, Title: "shipped", State: "MERGED"}, {Number: 5, Title: "live", State: "OPEN"}}, "")
+	for i, want := range []string{"[closed] gone", "[merged] shipped", "live"} {
+		if got := tbl.rows[i].cells[2]; got != want {
+			t.Errorf("row %d title = %q; want %q", i, got, want)
+		}
+	}
+}
