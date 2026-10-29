@@ -543,7 +543,8 @@ func (m *model) reselect(id string) {
 	m.gsel = min(m.gsel, max(0, len(nodes)-1))
 }
 
-// prListKey sets the PR list filter: u = opened by me, e = review requested from me, a = all.
+// prListKey sets the PR list filter: O C m A = open / closed / merged / all states; u = opened by me,
+// e = review requested from me, a = anyone. The state and the person filter are set independently.
 func (m model) prListKey(k tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	switch k.String() {
 	case "M":
@@ -553,12 +554,20 @@ func (m model) prListKey(k tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		}
 		next, cmd := m.startProjectAssign(r.id)
 		return next, cmd, true
+	case "O":
+		m.prFilter.State = ""
+	case "C":
+		m.prFilter.State = "closed"
+	case "m":
+		m.prFilter.State = "merged"
+	case "A":
+		m.prFilter.State = "all"
 	case "u":
-		m.prFilter = ghcli.PRFilter{Mine: true}
+		m.prFilter = ghcli.PRFilter{State: m.prFilter.State, Mine: true}
 	case "e":
-		m.prFilter = ghcli.PRFilter{ReviewRequested: true}
+		m.prFilter = ghcli.PRFilter{State: m.prFilter.State, ReviewRequested: true}
 	case "a":
-		m.prFilter = ghcli.PRFilter{}
+		m.prFilter = ghcli.PRFilter{State: m.prFilter.State}
 	default:
 		return m, nil, false
 	}
@@ -566,17 +575,22 @@ func (m model) prListKey(k tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	return m, m.fetch(), true
 }
 
-// prFilterName words the active PR filter for the title ("" when there is none).
+// prFilterName words the active PR filter for the title ("" when it is the plain open list).
 func prFilterName(f ghcli.PRFilter) string {
+	var parts []string
+	switch f.State {
+	case "closed", "merged", "all":
+		parts = append(parts, f.State)
+	}
 	switch {
 	case f.Mine && f.ReviewRequested:
-		return "opened by me + review requested"
+		parts = append(parts, "opened by me + review requested")
 	case f.Mine:
-		return "opened by me"
+		parts = append(parts, "opened by me")
 	case f.ReviewRequested:
-		return "review requested"
+		parts = append(parts, "review requested")
 	}
-	return ""
+	return strings.Join(parts, " + ")
 }
 
 // tabComplete inserts the best suggestion; further Tabs cycle through the others.

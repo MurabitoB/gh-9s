@@ -102,6 +102,11 @@ func (m model) View() string {
 	if m.view == viewIssue {
 		title += " issue=#" + m.issue
 	}
+	if m.view == viewDiscussions {
+		if name := discFilterName(m.discFilter); name != "" {
+			title += " filter=" + name
+		}
+	}
 	if m.view == viewDiscussions && m.discCatName != "" {
 		title += " category=" + m.discCatName
 	}
@@ -338,7 +343,7 @@ func (m model) footer() string {
 	case viewWorkflows:
 		keys = "enter runs  t trigger  f favorite  a alias  e enable/disable  o open"
 	case viewPRs:
-		keys = "enter detail  u mine  e review-requested  a all  f pin-repo  o open"
+		keys = "enter view  O/C/m/A state  u mine  e review  a any  f pin-repo  o open"
 	case viewFavs:
 		keys = m.favFooter()
 	case viewChecks:

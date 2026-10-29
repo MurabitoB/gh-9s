@@ -82,7 +82,9 @@ def graphql():
         save(s)
         out({"data": {"ok": {}}})
     if "discussionCategories" in query:
-        out(fx.discussion_list(vars_.get("cat") or next((a[4:] for a in args if a.startswith("cat=")), "")))
+        states = [a.split("=", 1)[1] for a in args if a.startswith("states[]=")]
+        answered = next((a.split("=", 1)[1] == "true" for a in args if a.startswith("answered=")), None)
+        out(fx.discussion_list(vars_.get("cat") or next((a[4:] for a in args if a.startswith("cat=")), ""), states, answered))
     if "discussion(number" in query:
         out(fx.discussion())
     if "reviewThreads" in query:
@@ -117,7 +119,9 @@ if cmd == ["workflow", "list"]:
 if cmd == ["pr", "list"]:
     if "statusCheckRollup" in (flag("--json") or ""):
         out(fx.PR_CHECKS)
-    out(fx.PR_LIST)
+    st = flag("--state", "open")
+    out({"closed": [p for p in fx.PR_DONE if p["state"] == "CLOSED"], "merged": [p for p in fx.PR_DONE if p["state"] == "MERGED"],
+         "all": fx.PR_LIST + fx.PR_DONE}.get(st, fx.PR_LIST))
 if cmd == ["issue", "list"]:
     out(fx.ISSUE_LIST)
 if cmd == ["issue", "view"]:
@@ -132,6 +136,6 @@ if cmd == ["label", "list"]:
     out([{"name": n} for n in fx.LABELS])
 if cmd[:1] == ["api"]:
     out("[[]]" if "--slurp" in args else "[]")
-if cmd[0] in ("issue", "pr") and cmd[1] in ("comment", "close", "reopen", "edit", "review", "merge"):
+if cmd[0] in ("issue", "pr") and cmd[1] in ("comment", "close", "reopen", "edit", "review", "merge", "ready", "update-branch", "lock", "unlock"):
     out("")
 out("[]" if "list" in args else "{}")

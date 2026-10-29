@@ -2,6 +2,7 @@ package ghcli
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -34,6 +35,7 @@ type IssueDetail struct {
 	Title, Body, Author, State, URL string
 	Labels, Assignees               []string
 	Comments                        []Comment
+	Locked, LockKnown               bool // whether the conversation is locked, and whether that could be read
 }
 
 // ParseIssueDetail reads the JSON of `gh issue view --json ...` (fields listed in FetchIssue).
@@ -81,7 +83,21 @@ func FetchIssue(r RepoRef, number string) (IssueDetail, error) {
 	if err != nil {
 		return IssueDetail{}, err
 	}
-	return ParseIssueDetail(out)
+	d, err := ParseIssueDetail(out)
+	if err != nil {
+		return d, err
+	}
+	if args := IssueLockedArgs(r, number); args != nil { // best effort: an old host or a missing scope leaves it unknown
+		if b, lerr := Run(args...); lerr == nil {
+			switch strings.TrimSpace(string(b)) {
+			case "true":
+				d.Locked, d.LockKnown = true, true
+			case "false":
+				d.LockKnown = true
+			}
+		}
+	}
+	return d, nil
 }
 
 // CommentIssueArgs is the `gh issue comment` command; the body is one --body=… argument.
@@ -95,9 +111,42 @@ func CommentIssue(r RepoRef, number, body string) error {
 	return err
 }
 
-// CloseIssueArgs is the `gh issue close` command.
-func CloseIssueArgs(r RepoRef, number string) []string {
-	return Scoped(r, "issue", "close", number)
+// IssueCloseReasons are the reasons gh accepts when an issue is closed.
+var IssueCloseReasons = []string{"completed", "not planned"}
+
+// CloseIssueArgs is the `gh issue close` command. reason is one of IssueCloseReasons, or "" for gh's
+// default; any other value yields nil so nothing unintended can be built from it.
+func CloseIssueArgs(r RepoRef, number, reason string) []string {
+	a := []string{"issue", "close", number}
+	if reason != "" {
+		ok := false
+		for _, known := range IssueCloseReasons {
+			ok = ok || known == reason
+		}
+		if !ok {
+			return nil
+		}
+		a = append(a, "--reason="+reason)
+	}
+	return Scoped(r, a...)
+}
+
+// LockIssueArgs is `gh issue lock` (or `unlock`): a locked conversation takes no new comments.
+func LockIssueArgs(r RepoRef, number string, lock bool) []string {
+	sub := "lock"
+	if !lock {
+		sub = "unlock"
+	}
+	return Scoped(r, "issue", sub, number)
+}
+
+// IssueLockedArgs reads whether an issue is locked: `gh issue view` does not offer that field.
+func IssueLockedArgs(r RepoRef, number string) []string {
+	if number == "" || strings.Trim(number, "0123456789") != "" {
+		return nil
+	}
+	endpoint, flags := r.APIEndpoint("/issues/" + number)
+	return append(append([]string{"api"}, flags...), endpoint, "--jq", ".locked")
 }
 
 // ReopenIssueArgs is the `gh issue reopen` command.
@@ -110,7 +159,11 @@ func ReopenIssueArgs(r RepoRef, number string) []string {
 // gh reads the label flags as comma-separated lists, so label names are quoted CSV-style when they
 // hold a comma, a quote or a line break (user logins cannot).
 func EditIssueArgs(r RepoRef, number string, addLabels, removeLabels, addAssignees, removeAssignees []string) []string {
-	a := []string{"issue", "edit", number}
+	return editArgs("issue", r, number, addLabels, removeLabels, addAssignees, removeAssignees)
+}
+
+func editArgs(kind string, r RepoRef, number string, addLabels, removeLabels, addAssignees, removeAssignees []string) []string {
+	a := []string{kind, "edit", number}
 	for _, group := range []struct {
 		flag  string
 		names []string
@@ -177,9 +230,19 @@ func ListAssignees(r RepoRef) ([]string, error) {
 	return ParseLoginLines(out), nil
 }
 
-// CloseIssue closes the issue.
-func CloseIssue(r RepoRef, number string) error {
-	_, err := Run(CloseIssueArgs(r, number)...)
+// CloseIssue closes the issue, with a reason from IssueCloseReasons or "" for none.
+func CloseIssue(r RepoRef, number, reason string) error {
+	args := CloseIssueArgs(r, number, reason)
+	if args == nil {
+		return fmt.Errorf("unknown close reason %q", reason)
+	}
+	_, err := Run(args...)
+	return err
+}
+
+// LockIssue locks the issue's conversation, or with lock false unlocks it.
+func LockIssue(r RepoRef, number string, lock bool) error {
+	_, err := Run(LockIssueArgs(r, number, lock)...)
 	return err
 }
 

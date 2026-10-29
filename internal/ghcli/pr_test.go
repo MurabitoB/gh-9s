@@ -93,6 +93,11 @@ func TestPRFilterArgs(t *testing.T) {
 		{PRFilter{Mine: true}, []string{"--author", "@me"}},
 		{PRFilter{ReviewRequested: true}, []string{"--search", "review-requested:@me"}},
 		{PRFilter{Mine: true, ReviewRequested: true}, []string{"--author", "@me", "--search", "review-requested:@me"}},
+		{PRFilter{State: "open"}, nil},
+		{PRFilter{State: "closed"}, []string{"--state", "closed"}},
+		{PRFilter{State: "merged", Mine: true}, []string{"--state", "merged", "--author", "@me"}},
+		{PRFilter{State: "all"}, []string{"--state", "all"}},
+		{PRFilter{State: "--web"}, nil}, // only the known states get through
 	}
 	for _, c := range cases {
 		if got := PRFilterArgs(c.f); !reflect.DeepEqual(got, c.want) {
@@ -154,5 +159,33 @@ func TestParsePRDetailSidebar(t *testing.T) {
 	empty, _ := ParsePRDetail([]byte(`{"number":2,"milestone":null,"projectItems":null}`))
 	if len(empty.Reviewers) != 0 || empty.Milestone != "" {
 		t.Errorf("empty = %+v", empty)
+	}
+}
+
+func TestPRStateArgs(t *testing.T) {
+	r := RepoRef{Host: "ghe.example.com", Owner: "acme", Name: "api"}
+	cases := []struct {
+		name string
+		got  []string
+		want []string
+	}{
+		{"close", ClosePRArgs(r, "7"), []string{"pr", "close", "7", "-R", "ghe.example.com/acme/api"}},
+		{"reopen", ReopenPRArgs(r, "7"), []string{"pr", "reopen", "7", "-R", "ghe.example.com/acme/api"}},
+		{"ready", ReadyPRArgs(r, "7", false), []string{"pr", "ready", "7", "-R", "ghe.example.com/acme/api"}},
+		{"update-branch", UpdatePRBranchArgs(r, "7"), []string{"pr", "update-branch", "7", "-R", "ghe.example.com/acme/api"}},
+		{"draft", ReadyPRArgs(r, "7", true), []string{"pr", "ready", "7", "--undo", "-R", "ghe.example.com/acme/api"}},
+	}
+	for _, c := range cases {
+		if !reflect.DeepEqual(c.got, c.want) {
+			t.Errorf("%s = %v; want %v", c.name, c.got, c.want)
+		}
+	}
+}
+
+func TestEditPRArgsKeepEveryNameOneArgument(t *testing.T) {
+	got := EditPRArgs(RepoRef{}, "7", []string{"needs triage 🚧", "a,b"}, []string{"-x"}, []string{"erin"}, []string{"frank"})
+	want := []string{"pr", "edit", "7", "--add-label=needs triage 🚧", `--add-label="a,b"`, "--remove-label=-x", "--add-assignee=erin", "--remove-assignee=frank"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("EditPRArgs = %v; want %v", got, want)
 	}
 }

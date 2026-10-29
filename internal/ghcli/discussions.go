@@ -9,7 +9,9 @@ import (
 
 // Discussion limits: what one read takes. More is noted on screen instead of paged.
 const (
-	DiscussionListLimit = 50  // discussions in the list
+	DiscussionListLimit = 50  // discussions in the list at first; each "more" adds this many
+	DiscussionListMax   = 500 // the most the list will grow to
+	discPageSize        = 50  // discussions asked of GitHub in one request
 	DiscussionComments  = 100 // top-level comments of one discussion
 	DiscussionReplies   = 50  // replies read under each comment
 	discBodyCut         = 4000
@@ -18,9 +20,9 @@ const (
 // discRun is the seam for tests.
 var discRun = RunWithTimeout
 
-const discListQuery = `query($owner:String!,$name:String!,$cat:ID){repository(owner:$owner,name:$name){hasDiscussionsEnabled discussionCategories(first:25){nodes{id name isAnswerable}} discussions(first:50,categoryId:$cat,orderBy:{field:UPDATED_AT,direction:DESC}){totalCount nodes{id number title body url updatedAt closed locked isAnswered author{login} category{name} comments{totalCount}}}}}`
+const discListQuery = `query($owner:String!,$name:String!,$cat:ID,$first:Int!,$after:String,$states:[DiscussionState!],$answered:Boolean){repository(owner:$owner,name:$name){hasDiscussionsEnabled discussionCategories(first:25){nodes{id name isAnswerable}} discussions(first:$first,after:$after,categoryId:$cat,states:$states,answered:$answered,orderBy:{field:UPDATED_AT,direction:DESC}){totalCount pageInfo{hasNextPage endCursor} nodes{id number title body url updatedAt closed locked isAnswered author{login} category{name} comments{totalCount}}}}}`
 
-const discQuery = `query($owner:String!,$name:String!,$n:Int!){repository(owner:$owner,name:$name){hasDiscussionsEnabled discussion(number:$n){id number title body url closed locked isAnswered createdAt author{login} category{name} comments(first:100){totalCount nodes{id body createdAt isAnswer author{login} replies(first:50){totalCount nodes{id body createdAt author{login}}}}}}}}`
+const discQuery = `query($owner:String!,$name:String!,$n:Int!){repository(owner:$owner,name:$name){hasDiscussionsEnabled discussion(number:$n){id number title body url closed locked isAnswered createdAt author{login} category{name isAnswerable} comments(first:100){totalCount nodes{id body createdAt isAnswer author{login} replies(first:50){totalCount nodes{id body createdAt author{login}}}}}}}}`
 
 // DiscCategory is one category of a repo's Discussions.
 type DiscCategory struct {
@@ -38,12 +40,18 @@ type DiscussionRow struct {
 	Comments                 int
 }
 
+// DiscFilter narrows the list. State is "open", "closed" or "all" ("" means open); Answer is
+// "answered", "unanswered" or "" for both.
+type DiscFilter struct{ Category, State, Answer string }
+
 // DiscussionList is the list screen's data.
 type DiscussionList struct {
 	Enabled    bool
 	Categories []DiscCategory
-	Total      int
+	Total      int  // all the discussions matching the filter, not only the rows read
+	More       bool // there are more than the rows read
 	Rows       []DiscussionRow
+	cursor     string // where the next page starts
 }
 
 // DiscReply is a reply under a comment.
@@ -64,6 +72,7 @@ type DiscussionDetail struct {
 	Title, Body, Author, Category, URL string
 	CreatedAt                          string
 	Closed, Locked, Answered, Enabled  bool
+	Answerable                         bool // the category takes an answer
 	Comments                           []DiscComment
 	CommentTotal                       int
 }
@@ -109,7 +118,11 @@ func ParseDiscussionList(b []byte) (DiscussionList, error) {
 					} `json:"nodes"`
 				} `json:"discussionCategories"`
 				Discussions struct {
-					Total int `json:"totalCount"`
+					Total    int `json:"totalCount"`
+					PageInfo struct {
+						HasNext   bool   `json:"hasNextPage"`
+						EndCursor string `json:"endCursor"`
+					} `json:"pageInfo"`
 					Nodes []*struct {
 						ID        string     `json:"id"`
 						Number    int        `json:"number"`
@@ -140,7 +153,7 @@ func ParseDiscussionList(b []byte) (DiscussionList, error) {
 		return DiscussionList{}, discGraphQLErr(resp.Errors)
 	}
 	r := resp.Data.Repo
-	out := DiscussionList{Enabled: r.Enabled, Total: r.Discussions.Total}
+	out := DiscussionList{Enabled: r.Enabled, Total: r.Discussions.Total, More: r.Discussions.PageInfo.HasNext, cursor: r.Discussions.PageInfo.EndCursor}
 	for _, c := range r.Cats.Nodes {
 		if c.ID != "" && c.Name != "" {
 			out.Categories = append(out.Categories, DiscCategory{c.ID, oneLine(CleanText(c.Name)), c.Answerable})
@@ -160,30 +173,64 @@ func ParseDiscussionList(b []byte) (DiscussionList, error) {
 	return out, nil
 }
 
-// DiscListArgs is the gh call that reads the list; the query and every value are separate arguments.
-func DiscListArgs(host string, r RepoRef, categoryID string) []string {
-	args := append(graphqlArgs(host), "-f", "query="+discListQuery, "-f", "owner="+r.Owner, "-f", "name="+r.Name)
-	if categoryID != "" {
-		args = append(args, "-f", "cat="+categoryID)
+// DiscListArgs is the gh call that reads one page of the list; the query and every value are separate arguments.
+func DiscListArgs(host string, r RepoRef, f DiscFilter, first int, after string) []string {
+	args := append(graphqlArgs(host), "-f", "query="+discListQuery, "-f", "owner="+r.Owner, "-f", "name="+r.Name, "-F", fmt.Sprintf("first=%d", first))
+	if f.Category != "" {
+		args = append(args, "-f", "cat="+f.Category)
+	}
+	switch f.State { // only the known states get through, so a stray value can never turn into something else
+	case "all":
+	case "closed":
+		args = append(args, "-f", "states[]=CLOSED")
+	default:
+		args = append(args, "-f", "states[]=OPEN")
+	}
+	switch f.Answer {
+	case "answered":
+		args = append(args, "-F", "answered=true")
+	case "unanswered":
+		args = append(args, "-F", "answered=false")
+	}
+	if after != "" {
+		args = append(args, "-f", "after="+after)
 	}
 	return args
 }
 
-// FetchDiscussions reads the repo's discussions, newest activity first, of one category when categoryID is set.
-func FetchDiscussions(host string, r RepoRef, categoryID string) (DiscussionList, error) {
-	var out []byte
-	err := retryOnce(func() error {
-		var e error
-		out, e = discRun(inboxTimeout, DiscListArgs(host, r, categoryID)...)
-		if e != nil && len(out) == 0 {
-			return e
+// FetchDiscussions reads the repo's discussions that match f, newest activity first, page after page until
+// limit are read or there are no more.
+func FetchDiscussions(host string, r RepoRef, f DiscFilter, limit int) (DiscussionList, error) {
+	var all DiscussionList
+	after := ""
+	for len(all.Rows) < limit {
+		first := min(discPageSize, limit-len(all.Rows))
+		var out []byte
+		err := retryOnce(func() error {
+			var e error
+			out, e = discRun(inboxTimeout, DiscListArgs(host, r, f, first, after)...)
+			if e != nil && len(out) == 0 {
+				return e
+			}
+			return nil
+		})
+		if err != nil {
+			return DiscussionList{}, err
 		}
-		return nil
-	})
-	if err != nil {
-		return DiscussionList{}, err
+		page, err := ParseDiscussionList(out)
+		if err != nil {
+			return DiscussionList{}, err
+		}
+		rows := all.Rows
+		all = page
+		all.Rows = append(rows, page.Rows...)
+		if !page.More || page.cursor == "" || !page.Enabled || len(page.Rows) == 0 {
+			all.More = all.More && page.cursor != "" && len(page.Rows) > 0
+			break
+		}
+		after = page.cursor
 	}
-	return ParseDiscussionList(out)
+	return all, nil
 }
 
 // ParseDiscussion reads the answer to discQuery.
@@ -204,7 +251,8 @@ func ParseDiscussion(b []byte) (DiscussionDetail, error) {
 					CreatedAt string     `json:"createdAt"`
 					Author    *discLogin `json:"author"`
 					Category  *struct {
-						Name string `json:"name"`
+						Name       string `json:"name"`
+						Answerable bool   `json:"isAnswerable"`
 					} `json:"category"`
 					Comments struct {
 						Total int `json:"totalCount"`
@@ -243,7 +291,7 @@ func ParseDiscussion(b []byte) (DiscussionDetail, error) {
 	d := DiscussionDetail{ID: n.ID, Number: n.Number, Title: oneLine(CleanText(n.Title)), Body: CleanText(n.Body), Author: discAuthor(n.Author),
 		URL: CleanText(n.URL), CreatedAt: n.CreatedAt, Closed: n.Closed, Locked: n.Locked, Answered: n.Answered, Enabled: true, CommentTotal: n.Comments.Total}
 	if n.Category != nil {
-		d.Category = oneLine(CleanText(n.Category.Name))
+		d.Category, d.Answerable = oneLine(CleanText(n.Category.Name)), n.Category.Answerable
 	}
 	for _, c := range n.Comments.Nodes {
 		if c == nil {

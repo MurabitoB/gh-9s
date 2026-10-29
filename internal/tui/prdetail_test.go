@@ -66,6 +66,36 @@ func TestPRListFilterKeysSetTheFilterAndRefetch(t *testing.T) {
 	}
 }
 
+func TestPRListStateKeysSetTheStateAndKeepThePersonFilter(t *testing.T) {
+	m := prListModel()
+	m = keys(m, "u")
+	for key, want := range map[string]string{"C": "closed", "m": "merged", "A": "all", "O": ""} {
+		next, cmd := m.Update(k(key))
+		m = next.(model)
+		if m.prFilter.State != want || !m.prFilter.Mine || cmd == nil || !m.loading {
+			t.Errorf("key %q: filter=%+v refetch=%v loading=%v; want state %q, still mine, with a refetch", key, m.prFilter, cmd != nil, m.loading, want)
+		}
+	}
+	m = keys(m, "C", "e")
+	if m.prFilter.State != "closed" || !m.prFilter.ReviewRequested || m.prFilter.Mine {
+		t.Errorf("e must keep the state and replace the person filter: %+v", m.prFilter)
+	}
+	m = keys(m, "a")
+	if m.prFilter != (ghcli.PRFilter{State: "closed"}) {
+		t.Errorf("a clears the person filter only: %+v", m.prFilter)
+	}
+}
+
+func TestTitleShowsTheStateFilter(t *testing.T) {
+	m := prListModel()
+	for state, want := range map[string]string{"closed": "closed", "merged": "merged", "all": "all"} {
+		m.prFilter = ghcli.PRFilter{State: state, Mine: true}
+		if v := m.View(); !strings.Contains(v, "filter="+want) || !strings.Contains(v, "opened by me") {
+			t.Errorf("state %q: title should name it and the person filter:\n%s", state, v)
+		}
+	}
+}
+
 func TestPRListArgsIncludeTheFilter(t *testing.T) {
 	args := prListArgs(acme, ghcli.PRFilter{ReviewRequested: true})
 	joined := strings.Join(args, " ")

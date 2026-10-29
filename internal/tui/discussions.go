@@ -13,8 +13,8 @@ import (
 
 // Outside calls the discussion screens make; tests replace them.
 var (
-	fetchDiscList = func(tg ghcli.RepoRef, cat string) (ghcli.DiscussionList, error) {
-		return ghcli.FetchDiscussions(hostOrDefault(tg.Host), tg, cat)
+	fetchDiscList = func(tg ghcli.RepoRef, f ghcli.DiscFilter, limit int) (ghcli.DiscussionList, error) {
+		return ghcli.FetchDiscussions(hostOrDefault(tg.Host), tg, f, limit)
 	}
 	fetchDisc = func(tg ghcli.RepoRef, number string) (ghcli.DiscussionDetail, error) {
 		return ghcli.FetchDiscussion(hostOrDefault(tg.Host), tg, number)
@@ -22,7 +22,45 @@ var (
 	commentDisc = func(tg ghcli.RepoRef, discussionID, body, replyTo string) error {
 		return ghcli.AddDiscussionComment(hostOrDefault(tg.Host), discussionID, body, replyTo)
 	}
+	closeDisc = func(tg ghcli.RepoRef, discussionID, reason string) error {
+		return ghcli.CloseDiscussion(hostOrDefault(tg.Host), discussionID, reason)
+	}
+	reopenDisc = func(tg ghcli.RepoRef, discussionID string) error {
+		return ghcli.ReopenDiscussion(hostOrDefault(tg.Host), discussionID)
+	}
+	markDiscAnswer = func(tg ghcli.RepoRef, commentID string, mark bool) error {
+		return ghcli.MarkDiscussionAnswer(hostOrDefault(tg.Host), commentID, mark)
+	}
+	lockDisc = func(tg ghcli.RepoRef, discussionID string, lock bool) error {
+		return ghcli.LockDiscussion(hostOrDefault(tg.Host), discussionID, lock)
+	}
 )
+
+// discFilterOf is the filter the list reads with: the state and answer filters and the category.
+func (m model) discFilterOf() ghcli.DiscFilter {
+	f := m.discFilter
+	f.Category = m.discCat
+	return f
+}
+
+// discListLimit is how many discussions the list reads.
+func (m model) discListLimit() int {
+	return max(m.discLimit, ghcli.DiscussionListLimit)
+}
+
+// discFilterName words the state and answer filters for the title ("" for the plain open list).
+func discFilterName(f ghcli.DiscFilter) string {
+	var parts []string
+	switch f.State {
+	case "closed", "all":
+		parts = append(parts, f.State)
+	}
+	switch f.Answer {
+	case "answered", "unanswered":
+		parts = append(parts, f.Answer)
+	}
+	return strings.Join(parts, " + ")
+}
 
 // discListState is what the list screen keeps: what was read, for the categories dialog and the pane.
 type discListState struct{ l ghcli.DiscussionList }
@@ -37,11 +75,11 @@ type discState struct {
 func init() {
 	register(viewDiscussions, screen{
 		name:     "discussions",
-		identity: func(m model) string { return m.curTarget().String() + "|" + m.discCat },
+		identity: func(m model) string { return m.discListID() },
 		fetch: func(m model) tea.Cmd {
-			tg, cat, id := m.curTarget(), m.discCat, m.curTarget().String()+"|"+m.discCat
+			tg, f, limit, id := m.curTarget(), m.discFilterOf(), m.discListLimit(), m.discListID()
 			return func() tea.Msg {
-				l, err := fetchDiscList(tg, cat)
+				l, err := fetchDiscList(tg, f, limit)
 				return screenMsg{view: viewDiscussions, id: id, data: l, err: err}
 			}
 		},
@@ -53,13 +91,13 @@ func init() {
 				m.cursor = max(0, n-1)
 			}
 			if l.Enabled && l.Total > len(l.Rows) {
-				m.status = styDim.Render(fmt.Sprintf("showing the first %d of %d discussions (c narrows them by category)", len(l.Rows), l.Total))
+				m.status = styDim.Render(fmt.Sprintf("showing the first %d of %d discussions (m loads more, c narrows them by category)", len(l.Rows), l.Total))
 			}
 			return m
 		},
 		key:    discListKey,
 		body:   discListBody,
-		footer: "enter open  c category  o browser  J/K scroll pane  p hide pane",
+		footer: "enter open  O/C/A state  u unanswered  a answered  m more  c category  o browser",
 	})
 	register(viewDiscussion, screen{
 		name:     "discussion",
@@ -77,7 +115,7 @@ func init() {
 		},
 		key:    discKey,
 		body:   discBody,
-		footer: "C comment  r reply  n/N next/prev comment  o open  j/k scroll",
+		footer: "C comment  r reply  n/N pick  x/X close/reopen  A answer  L lock  o open  j/k scroll",
 	})
 	dialogHandlers["disc.category"] = func(m model, r dialogResultMsg) (model, tea.Cmd) {
 		st, _ := m.screenData(viewDiscussions).(discListState)
@@ -98,11 +136,35 @@ func init() {
 		if id == m.discCat {
 			return m, nil
 		}
-		m.discCat, m.discCatName = id, name
+		m.discCat, m.discCatName, m.discLimit = id, name, 0
 		m.cursor, m.top, m.loading = 0, 0, true
 		m.tbl = table{}
 		return m, m.fetch()
 	}
+	dialogHandlers["disc.close"] = func(m model, r dialogResultMsg) (model, tea.Cmd) {
+		p := m.pending
+		m.pending = nil
+		if !r.ok || p == nil || len(r.values) != 1 {
+			return m, nil
+		}
+		return m, func() tea.Msg {
+			return prActionDoneMsg{text: "closed " + p.label, err: closeDisc(p.target, p.discID, r.values[0])}
+		}
+	}
+	discConfirmed := func(text string, do func(p *prAction) error) func(model, dialogResultMsg) (model, tea.Cmd) {
+		return func(m model, r dialogResultMsg) (model, tea.Cmd) {
+			p := m.pending
+			m.pending = nil
+			if !r.ok || p == nil {
+				return m, nil
+			}
+			return m, func() tea.Msg { return prActionDoneMsg{text: text + " " + p.label, err: do(p)} }
+		}
+	}
+	dialogHandlers["disc.mark"] = discConfirmed("marked the answer of", func(p *prAction) error { return markDiscAnswer(p.target, p.commentID, true) })
+	dialogHandlers["disc.unmark"] = discConfirmed("removed the answer mark from", func(p *prAction) error { return markDiscAnswer(p.target, p.commentID, false) })
+	dialogHandlers["disc.lock"] = discConfirmed("locked", func(p *prAction) error { return lockDisc(p.target, p.discID, true) })
+	dialogHandlers["disc.unlock"] = discConfirmed("unlocked", func(p *prAction) error { return lockDisc(p.target, p.discID, false) })
 	dialogHandlers["disc.comment"] = func(m model, r dialogResultMsg) (model, tea.Cmd) {
 		p := m.pending
 		m.pending = nil
@@ -152,9 +214,44 @@ func discListBody(m model) string {
 	return m.tableBody()
 }
 
-// discListKey: c picks the category, enter opens a discussion; the rest is the shared table behaviour.
+// discListID names what the list shows, so a late answer for another filter or category is dropped.
+func (m model) discListID() string {
+	f := m.discFilterOf()
+	return fmt.Sprintf("%s|%s|%s|%s|%d", m.curTarget(), f.Category, f.State, f.Answer, m.discListLimit())
+}
+
+// discListKey: O/C/A pick the state, u / a the answered filter, m reads more, c picks the category, enter opens a
+// discussion; the rest is the shared table behaviour.
 func discListKey(m model, k tea.KeyMsg) (model, tea.Cmd, bool) {
+	refetch := func(m model) (model, tea.Cmd, bool) {
+		m.cursor, m.top, m.loading = 0, 0, true
+		return m, m.fetch(), true
+	}
 	switch k.String() {
+	case "O", "C", "A":
+		m.discFilter.State = map[string]string{"O": "", "C": "closed", "A": "all"}[k.String()]
+		m.discLimit = 0
+		return refetch(m)
+	case "u", "a":
+		want := map[string]string{"u": "unanswered", "a": "answered"}[k.String()]
+		if m.discFilter.Answer == want {
+			want = ""
+		}
+		m.discFilter.Answer, m.discLimit = want, 0
+		return refetch(m)
+	case "m":
+		st, _ := m.screenData(viewDiscussions).(discListState)
+		if !st.l.More {
+			m.status = styDim.Render("no more discussions")
+			return m, nil, true
+		}
+		if m.discListLimit() >= ghcli.DiscussionListMax {
+			m.status = styDim.Render(fmt.Sprintf("the list stops at %d discussions: c, O/C/A and u/a narrow it", ghcli.DiscussionListMax))
+			return m, nil, true
+		}
+		m.discLimit = min(m.discListLimit()+ghcli.DiscussionListLimit, ghcli.DiscussionListMax)
+		m.loading = true // keep the cursor and scroll: the same rows come first
+		return m, m.fetch(), true
 	case "c":
 		st, _ := m.screenData(viewDiscussions).(discListState)
 		if len(st.l.Categories) == 0 {
@@ -416,6 +513,9 @@ func discKey(m model, k tea.KeyMsg) (model, tea.Cmd, bool) {
 		}
 		next, cmd := m.startDiscComment(st.d, thread, e.author)
 		return next, cmd, true
+	case "x", "X", "A", "L":
+		next, cmd := m.discStateKey(k.String(), st, doc)
+		return next, cmd, true
 	case "o":
 		if st.d.URL != "" {
 			m = m.open(st.d.URL)
@@ -425,4 +525,63 @@ func discKey(m model, k tea.KeyMsg) (model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 	return m.withScreenData(viewDiscussion, st), nil, true
+}
+
+// discStateKey handles the keys of the discussion that change it: x close, X reopen, A mark / unmark the selected
+// comment as the answer, L lock / unlock. Each says why when it does not apply.
+func (m model) discStateKey(key string, st discState, doc discDoc) (model, tea.Cmd) {
+	note := func(text string) (model, tea.Cmd) {
+		m.status = styDim.Render(text)
+		return m, nil
+	}
+	d := st.d
+	if d.ID == "" {
+		return note("still loading the discussion")
+	}
+	label := displayRef(m.curTarget()) + "#" + m.disc
+	m.pending = &prAction{target: m.curTarget(), number: m.disc, label: label, discID: d.ID}
+	switch key {
+	case "x":
+		if d.Closed {
+			m.pending = nil
+			return note("already closed — nothing to close")
+		}
+		cs := []choice{{label: "Resolved", value: "RESOLVED"}, {label: "Outdated", value: "OUTDATED"}, {label: "Duplicate", value: "DUPLICATE"}}
+		return m.withDialog(newChoiceDialog("disc.close", "Close "+label+" as…", cs, false, nil)), nil
+	case "X":
+		if !d.Closed {
+			m.pending = nil
+			return note("already open — nothing to reopen")
+		}
+		p := m.pending
+		m.pending = nil
+		return m, func() tea.Msg {
+			return prActionDoneMsg{text: "reopened " + p.label, err: reopenDisc(p.target, p.discID)}
+		}
+	case "L":
+		if d.Locked {
+			return m.withDialog(newConfirmDialog("disc.unlock", "Unlock "+label+"?", d.Title+" — people can comment on it again")), nil
+		}
+		return m.withDialog(newConfirmDialog("disc.lock", "Lock "+label+"?", d.Title+" — nobody can comment on it until it is unlocked")), nil
+	}
+	// A: the selected comment is, or stops being, the answer.
+	e, _, has := doc.entry(st.sel)
+	switch {
+	case !has:
+		m.pending = nil
+		return note("select a comment first (n / N)")
+	case e.parent != "":
+		m.pending = nil
+		return note("only a top-level comment can be the answer, not a reply")
+	case !d.Answerable:
+		m.pending = nil
+		return note("the category " + orDash(d.Category) + " takes no answers")
+	}
+	m.pending.commentID = e.id
+	for _, c := range d.Comments {
+		if c.ID == e.id && c.IsAnswer {
+			return m.withDialog(newConfirmDialog("disc.unmark", "Remove the answer mark in "+label+"?", e.author+"'s comment is no longer the answer")), nil
+		}
+	}
+	return m.withDialog(newConfirmDialog("disc.mark", "Mark "+e.author+"'s comment as the answer of "+label+"?", d.Title)), nil
 }

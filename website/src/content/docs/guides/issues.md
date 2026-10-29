@@ -1,6 +1,6 @@
 ---
 title: Issues
-description: List, filter, read, comment on, close and label issues.
+description: List, filter, read, comment on, close, lock and label issues.
 ---
 
 The issue view (`2` or `:issues`) lists issues in the current repository. Press `enter` to open one.
@@ -27,13 +27,16 @@ Press `enter` on an issue to read its description and discussion. On a terminal 
 |---|---|
 | `a` | Send the issue to a coding agent (asks first) |
 | `C` | Write a comment |
-| `x` | Close the issue (asks first) |
+| `x` | Close the issue, as completed or not planned |
 | `X` | Reopen the issue |
+| `L` | Lock or unlock the conversation (asks first) |
 | `l` | Edit labels |
 | `s` | Edit assignees |
 | `tab` | Select an image |
 | `enter` | Show the selected image full screen |
 | `o` | Open in the browser |
+
+A locked conversation shows `locked` under the title. If gh-9s cannot tell whether it is locked (an older host, or a token without access), `L` says so and changes nothing.
 
 `a` starts a coding agent on the issue in Orca, herdr or tmux. See [Send an issue to an agent](/gh-9s/guides/send-to-agent/).
 

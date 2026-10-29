@@ -1,20 +1,23 @@
 ---
 title: Pull requests
-description: List, filter, inspect, check, review and merge pull requests.
+description: List, filter, inspect, check, review, merge and close pull requests.
 ---
 
-The pull request view (`1` or `:pr`) lists open pull requests in the current repository. Press `enter` to open one.
+The pull request view (`1` or `:pr`) lists the open pull requests of the current repository; closed and merged ones are one key away. Press `enter` to open one.
 
 ## List
 
 | Key | Action |
 |---|---|
 | `enter` | Open the pull request |
+| `O` / `C` / `m` / `A` | Show open / closed / merged / all PRs |
 | `u` | Show only the PRs opened by you |
 | `e` | Show the PRs that requested your review |
-| `a` | Show all open PRs |
+| `a` | Show PRs from anyone (clears `u` and `e`) |
 | `f` | Pin or unpin this repository |
 | `o` | Open in the browser |
+
+The state and the person filters combine: `C` then `u` lists the closed PRs you opened. Closed and merged PRs are marked `[closed]` and `[merged]` in the title. The title bar names the active filter.
 
 The CHECKS column is loaded separately, because GitHub can take many seconds to compute the checks of 50 PRs on a large repository. Until it arrives the column shows `…`. If it fails, the column shows `-` and the status line says why.
 
@@ -38,8 +41,16 @@ On a terminal about 100 columns of text wide or more, a sidebar appears on the r
 | `C` | Write a comment |
 | `r` | Review: approve, request changes, or comment |
 | `m` | Merge |
+| `x` | Close without merging (asks first) |
+| `X` | Reopen a closed PR |
+| `D` | Mark a draft ready for review, or turn a PR into a draft (asks first) |
+| `U` | Update the branch with its base branch (asks first) |
+| `l` | Edit labels |
+| `s` | Edit assignees |
 | `o` | Open in the browser |
 | `esc` | Back |
+
+A merged PR cannot be closed or reopened, and `D` and `U` work only on an open PR; each key says why when it does not apply. Closing leaves a PR you can reopen with `X`. Marking a draft ready notifies its reviewers, which is why it asks first. `U` adds a merge commit to the PR's branch.
 
 ## Checks
 

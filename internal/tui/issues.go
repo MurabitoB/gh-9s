@@ -22,6 +22,7 @@ var (
 	editIssue      = ghcli.EditIssue
 	closeIssue     = ghcli.CloseIssue
 	reopenIssue    = ghcli.ReopenIssue
+	lockIssue      = ghcli.LockIssue
 )
 
 // issueState is what the issue screen keeps in the model.
@@ -70,18 +71,33 @@ func init() {
 		},
 		key:    issueKey,
 		body:   issueBody,
-		footer: "a agent  C comment  x close  X reopen  l labels  s assignees  M projects  o open  j/k scroll",
+		footer: "a agent  C comment  x/X close/reopen  L lock  l/s labels  M projects  o open  j/k scroll",
 	})
 	dialogHandlers["issue.close"] = func(m model, r dialogResultMsg) (model, tea.Cmd) {
 		p := m.pending
 		m.pending = nil
-		if !r.ok || p == nil {
+		if !r.ok || p == nil || len(r.values) != 1 {
 			return m, nil
 		}
 		return m, func() tea.Msg {
-			return prActionDoneMsg{text: "closed " + p.label, err: closeIssue(p.target, p.number)}
+			return prActionDoneMsg{text: "closed " + p.label, err: closeIssue(p.target, p.number, r.values[0])}
 		}
 	}
+	lockHandler := func(lock bool) func(model, dialogResultMsg) (model, tea.Cmd) {
+		return func(m model, r dialogResultMsg) (model, tea.Cmd) {
+			p := m.pending
+			m.pending = nil
+			if !r.ok || p == nil {
+				return m, nil
+			}
+			text := "unlocked "
+			if lock {
+				text = "locked "
+			}
+			return m, func() tea.Msg { return prActionDoneMsg{text: text + p.label, err: lockIssue(p.target, p.number, lock)} }
+		}
+	}
+	dialogHandlers["issue.lock"], dialogHandlers["issue.unlock"] = lockHandler(true), lockHandler(false)
 	dialogHandlers["issue.labels"] = func(m model, r dialogResultMsg) (model, tea.Cmd) {
 		p := m.pending
 		m.pending = nil
@@ -229,7 +245,13 @@ func issueKey(m model, k tea.KeyMsg) (model, tea.Cmd, bool) {
 			return m, nil, true
 		}
 		m, p := m.startIssueAction(st)
-		return m.withDialog(newConfirmDialog("issue.close", "Close "+p.label+"?", st.d.Title)), nil, true
+		var reasons []choice
+		for _, r := range ghcli.IssueCloseReasons {
+			reasons = append(reasons, choice{label: strings.ToUpper(r[:1]) + r[1:], value: r})
+		}
+		d := newChoiceDialog("issue.close", "Close "+p.label+" as…", reasons, false, nil)
+		d.prompt = st.d.Title
+		return m.withDialog(d), nil, true
 	case "X":
 		if st.d.State == "OPEN" {
 			m.status = styDim.Render("already open — nothing to reopen")
@@ -244,6 +266,20 @@ func issueKey(m model, k tea.KeyMsg) (model, tea.Cmd, bool) {
 		return m, func() tea.Msg {
 			return prActionDoneMsg{text: "reopened " + p.label, err: reopenIssue(p.target, p.number)}
 		}, true
+	case "L":
+		switch {
+		case st.d.State == "":
+			m.status = styDim.Render("still loading the issue")
+			return m, nil, true
+		case !st.d.LockKnown:
+			m.status = styDim.Render("couldn't tell whether the conversation is locked — not changing it")
+			return m, nil, true
+		}
+		m, p := m.startIssueAction(st)
+		if st.d.Locked {
+			return m.withDialog(newConfirmDialog("issue.unlock", "Unlock "+p.label+"?", st.d.Title+" — people can comment on it again")), nil, true
+		}
+		return m.withDialog(newConfirmDialog("issue.lock", "Lock "+p.label+"?", st.d.Title+" — nobody without write access can comment on it until it is unlocked")), nil, true
 	case "l", "s":
 		m, p := m.startIssueAction(st)
 		kind := "labels"
@@ -262,7 +298,7 @@ func issueKey(m model, k tea.KeyMsg) (model, tea.Cmd, bool) {
 			} else {
 				names, err = listAssignees(tg)
 			}
-			return choicesMsg{id: id, kind: kind, names: names, err: err}
+			return choicesMsg{view: viewIssue, id: id, kind: kind, names: names, err: err}
 		}, true
 	case "o":
 		if st.d.URL != "" {
@@ -294,7 +330,11 @@ func issueLines(d ghcli.IssueDetail, width int) detailDoc {
 		return detailDoc{lines: []string{"loading…"}}
 	}
 	var out detailDoc
-	out.add(fmt.Sprintf("#%d  %s", d.Number, d.Title), fmt.Sprintf("%s   %s", d.Author, d.State))
+	meta := fmt.Sprintf("%s   %s", d.Author, d.State)
+	if d.Locked {
+		meta += "   locked"
+	}
+	out.add(fmt.Sprintf("#%d  %s", d.Number, d.Title), meta)
 	split := width >= detailSplitMin
 	mainW := width
 	if split {
@@ -354,8 +394,9 @@ func stateWord(d ghcli.IssueDetail, word string) string {
 
 // choicesMsg carries the repo's labels or assignable users for a multi-choice dialog.
 type choicesMsg struct {
-	id    string // the issue the lists were fetched for
-	kind  string // "labels" or "assignees"
+	view  viewKind // the screen they were asked from: the issue or the PR detail
+	id    string   // the issue or PR the lists were fetched for
+	kind  string   // "labels" or "assignees"
 	names []string
 	err   error
 }
@@ -364,7 +405,11 @@ type choicesMsg struct {
 // list, even if the repo no longer offers them, so they can still be removed.
 func (m model) choicesLoaded(msg choicesMsg) model {
 	p := m.pending
-	if p == nil || m.view != viewIssue || msg.id != m.itemID(m.issue) || p.want != msg.kind || m.dlg != nil {
+	number, prefix := m.issue, "issue."
+	if msg.view == viewPRDetail {
+		number, prefix = m.pr, "pr."
+	}
+	if p == nil || m.view != msg.view || msg.id != m.itemID(number) || p.want != msg.kind || m.dlg != nil {
 		return m // nothing is waiting for this, or the user has moved on or is busy with a dialog
 	}
 	if msg.err != nil {
@@ -385,9 +430,9 @@ func (m model) choicesLoaded(msg choicesMsg) model {
 	for i, n := range names {
 		choices[i] = choice{label: n, value: n}
 	}
-	id, title := "issue.labels", "Labels for "+p.label
+	id, title := prefix+"labels", "Labels for "+p.label
 	if msg.kind == "assignees" {
-		id, title = "issue.assignees", "Assignees for "+p.label
+		id, title = prefix+"assignees", "Assignees for "+p.label
 	}
 	return m.withDialog(newChoiceDialog(id, title, choices, true, p.current))
 }

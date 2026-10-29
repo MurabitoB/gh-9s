@@ -6,8 +6,23 @@ import (
 )
 
 func TestCloseAndReopenArgs(t *testing.T) {
-	if got, want := CloseIssueArgs(acmeAPI, "14812"), []string{"issue", "close", "14812", "-R", "acme/api"}; !reflect.DeepEqual(got, want) {
+	if got, want := CloseIssueArgs(acmeAPI, "14812", ""), []string{"issue", "close", "14812", "-R", "acme/api"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("close = %q; want %q", got, want)
+	}
+	if got, want := CloseIssueArgs(acmeAPI, "14812", "not planned"), []string{"issue", "close", "14812", "--reason=not planned", "-R", "acme/api"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("close as not planned = %q; want %q", got, want)
+	}
+	if got, want := CloseIssueArgs(acmeAPI, "14812", "completed"), []string{"issue", "close", "14812", "--reason=completed", "-R", "acme/api"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("close as completed = %q; want %q", got, want)
+	}
+	if got := CloseIssueArgs(acmeAPI, "14812", "--web"); got != nil {
+		t.Errorf("an unknown reason must build no command, got %q", got)
+	}
+	if got, want := LockIssueArgs(acmeAPI, "7", true), []string{"issue", "lock", "7", "-R", "acme/api"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("lock = %q; want %q", got, want)
+	}
+	if got, want := LockIssueArgs(acmeAPI, "7", false), []string{"issue", "unlock", "7", "-R", "acme/api"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("unlock = %q; want %q", got, want)
 	}
 	if got, want := ReopenIssueArgs(RepoRef{}, "7"), []string{"issue", "reopen", "7"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("reopen = %q; want %q", got, want)
@@ -70,5 +85,16 @@ func TestParseLabelNamesAndLogins(t *testing.T) {
 	}
 	if got, err := ParseLabelNames([]byte(`[]`)); err != nil || len(got) != 0 {
 		t.Errorf("empty list: %v %v", got, err)
+	}
+}
+
+func TestIssueLockedArgsReadTheRestFieldAndRefuseABadNumber(t *testing.T) {
+	got := IssueLockedArgs(RepoRef{Host: "ghe.example.com", Owner: "acme", Name: "api"}, "14812")
+	want := []string{"api", "--hostname", "ghe.example.com", "repos/acme/api/issues/14812", "--jq", ".locked"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("IssueLockedArgs = %q; want %q", got, want)
+	}
+	if IssueLockedArgs(acmeAPI, "../x") != nil || IssueLockedArgs(acmeAPI, "") != nil {
+		t.Error("a number that is not digits must build no command")
 	}
 }

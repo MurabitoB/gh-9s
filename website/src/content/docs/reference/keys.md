@@ -82,9 +82,10 @@ Projects tab: `enter` open the board, `a` pin, `f` or `d` unpin (asks first), `o
 | Key | Action |
 |---|---|
 | `enter` | Open the PR |
+| `O` / `C` / `m` / `A` | Open / closed / merged / all |
 | `u` | Only mine |
 | `e` | Review requested from me |
-| `a` | All |
+| `a` | Anyone |
 | `f` | Pin or unpin this repository |
 | `o` | Open in the browser |
 
@@ -97,6 +98,12 @@ Projects tab: `enter` open the board, `a` pin, `f` or `d` unpin (asks first), `o
 | `C` | Comment |
 | `r` | Review: approve, request changes, or comment |
 | `m` | Merge |
+| `x` | Close without merging (asks first) |
+| `X` | Reopen a closed PR |
+| `D` | Mark ready for review / turn into a draft (asks first) |
+| `U` | Update the branch with its base (asks first) |
+| `l` | Labels |
+| `s` | Assignees |
 | `M` | Add to / remove from Projects (asks first) |
 | `tab` | Select an image |
 | `enter` | Show the selected image |
@@ -164,8 +171,9 @@ In the file tree:
 |---|---|
 | `a` | Send to a coding agent (asks first) |
 | `C` | Comment |
-| `x` | Close (asks first) |
+| `x` | Close, as completed or not planned |
 | `X` | Reopen |
+| `L` | Lock / unlock the conversation (asks first) |
 | `l` | Labels |
 | `s` | Assignees |
 | `tab` / `enter` | Select an image / show it |
@@ -176,6 +184,9 @@ In the file tree:
 | Key | Action |
 |---|---|
 | `enter` | Open the discussion |
+| `O` / `C` / `A` | Open / closed / all |
+| `u` / `a` | Only unanswered / only answered (again: both) |
+| `m` | Read more discussions |
 | `c` | Narrow to a category (or all) |
 | `o` | Open in the browser |
 
@@ -186,6 +197,10 @@ In the file tree:
 | `n` / `N` | Select the next / previous comment or reply |
 | `C` | Comment (asks first) |
 | `r` | Reply in the selected comment's thread (asks first) |
+| `x` | Close, with a reason |
+| `X` | Reopen |
+| `A` | Mark the selected comment as the answer / remove the mark (asks first) |
+| `L` | Lock / unlock (asks first) |
 | `o` | Open in the browser |
 
 ## Wiki (list)

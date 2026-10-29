@@ -2,6 +2,7 @@ package ghcli
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -88,13 +89,13 @@ func TestParseDiscussionMissing(t *testing.T) {
 }
 
 func TestDiscussionArgsKeepValuesApartFromTheQuery(t *testing.T) {
-	a := strings.Join(DiscListArgs("ghe.corp", RepoRef{Owner: "acme", Name: "app"}, "C1"), " ")
+	a := strings.Join(DiscListArgs("ghe.corp", RepoRef{Owner: "acme", Name: "app"}, DiscFilter{Category: "C1"}, 50, ""), " ")
 	for _, want := range []string{"--hostname ghe.corp", "-f owner=acme", "-f name=app", "-f cat=C1"} {
 		if !strings.Contains(a, want) {
 			t.Errorf("%q missing from %s", want, a)
 		}
 	}
-	if strings.Contains(strings.Join(DiscListArgs("", RepoRef{Owner: "a", Name: "b"}, ""), " "), "cat=") {
+	if strings.Contains(strings.Join(DiscListArgs("", RepoRef{Owner: "a", Name: "b"}, DiscFilter{}, 50, ""), " "), "cat=") {
 		t.Error("a category was sent for All")
 	}
 	d := strings.Join(DiscArgs("", RepoRef{Owner: "acme", Name: "app"}, 42), " ")
@@ -144,5 +145,117 @@ func TestAddDiscussionCommentSendsIdsAsVariables(t *testing.T) {
 	}
 	if AddDiscussionComment("", "", "x", "") == nil || AddDiscussionComment("", "D1", "  ", "") == nil {
 		t.Error("bad comment accepted")
+	}
+}
+
+func TestDiscListArgsCarryTheFilterAndThePage(t *testing.T) {
+	r := RepoRef{Owner: "acme", Name: "app"}
+	join := func(f DiscFilter, first int, after string) string {
+		return strings.Join(DiscListArgs("", r, f, first, after), " ")
+	}
+	cases := []struct {
+		name     string
+		got      string
+		want     []string
+		wantNone []string
+	}{
+		{"open by default", join(DiscFilter{}, 50, ""), []string{"-f states[]=OPEN", "-F first=50"}, []string{"answered=", "after="}},
+		{"closed", join(DiscFilter{State: "closed"}, 50, ""), []string{"-f states[]=CLOSED"}, []string{"OPEN"}},
+		{"all states", join(DiscFilter{State: "all"}, 50, ""), nil, []string{"states[]"}},
+		{"answered", join(DiscFilter{Answer: "answered"}, 50, ""), []string{"-F answered=true"}, nil},
+		{"unanswered", join(DiscFilter{Answer: "unanswered"}, 50, ""), []string{"-F answered=false"}, nil},
+		{"second page", join(DiscFilter{}, 30, "Y3Vyc29y"), []string{"-F first=30", "-f after=Y3Vyc29y"}, nil},
+		{"a stray state is open", join(DiscFilter{State: "--web"}, 50, ""), []string{"-f states[]=OPEN"}, []string{"--web"}},
+	}
+	for _, c := range cases {
+		for _, w := range c.want {
+			if !strings.Contains(c.got, w) {
+				t.Errorf("%s: %q missing from %s", c.name, w, c.got)
+			}
+		}
+		for _, w := range c.wantNone {
+			if strings.Contains(c.got, w) {
+				t.Errorf("%s: %q must not be in %s", c.name, w, c.got)
+			}
+		}
+	}
+}
+
+func discPageJSON(hasNext bool, cursor string, numbers ...int) string {
+	var nodes []string
+	for _, n := range numbers {
+		nodes = append(nodes, fmt.Sprintf(`{"id":"D%d","number":%d,"title":"t%d","comments":{"totalCount":0}}`, n, n, n))
+	}
+	return fmt.Sprintf(`{"data":{"repository":{"hasDiscussionsEnabled":true,"discussions":{"totalCount":90,"pageInfo":{"hasNextPage":%v,"endCursor":%q},"nodes":[%s]}}}}`, hasNext, cursor, strings.Join(nodes, ","))
+}
+
+func TestFetchDiscussionsFollowsPagesUpToTheLimit(t *testing.T) {
+	old := discRun
+	t.Cleanup(func() { discRun = old })
+	var calls []string
+	discRun = func(d time.Duration, args ...string) ([]byte, error) {
+		a := strings.Join(args, " ")
+		calls = append(calls, a)
+		if strings.Contains(a, "after=C1") {
+			return []byte(discPageJSON(true, "C2", 3, 4)), nil
+		}
+		return []byte(discPageJSON(true, "C1", 1, 2)), nil
+	}
+	l, err := FetchDiscussions("", RepoRef{Owner: "a", Name: "b"}, DiscFilter{}, 4)
+	if err != nil || len(l.Rows) != 4 || l.Rows[3].Number != 4 || !l.More || l.Total != 90 {
+		t.Fatalf("%+v %v", l, err)
+	}
+	if len(calls) != 2 || !strings.Contains(calls[0], "first=4") || !strings.Contains(calls[1], "first=2") {
+		t.Errorf("calls = %v", calls)
+	}
+	// the last page: nothing more
+	calls = nil
+	discRun = func(d time.Duration, args ...string) ([]byte, error) {
+		return []byte(discPageJSON(false, "", 1, 2)), nil
+	}
+	l, err = FetchDiscussions("", RepoRef{Owner: "a", Name: "b"}, DiscFilter{}, 50)
+	if err != nil || len(l.Rows) != 2 || l.More {
+		t.Errorf("%+v %v", l, err)
+	}
+}
+
+func TestDiscussionWritesSendIdsAsVariables(t *testing.T) {
+	body := captured(t, `{"data":{"x":{}}}`)
+	check := func(name string, err error, wants ...string) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		b := string(*body)
+		head := strings.SplitN(b, `"variables"`, 2)[0]
+		for _, w := range wants {
+			if !strings.Contains(b, w) {
+				t.Errorf("%s: %q missing from %s", name, w, b)
+			}
+		}
+		if strings.Contains(head, "D1") || strings.Contains(head, "K1") {
+			t.Errorf("%s: an id was pasted into the query text: %s", name, head)
+		}
+	}
+	check("close", CloseDiscussion("", "D1", "OUTDATED"), "closeDiscussion", `"discussion":"D1"`, `"reason":"OUTDATED"`)
+	check("close without a reason", CloseDiscussion("", "D1", ""), "closeDiscussion")
+	if strings.Contains(string(*body), `"reason"`) {
+		t.Errorf("no reason must send none: %s", *body)
+	}
+	check("reopen", ReopenDiscussion("", "D1"), "reopenDiscussion", `"discussion":"D1"`)
+	check("answer", MarkDiscussionAnswer("", "K1", true), "markDiscussionCommentAsAnswer", `"comment":"K1"`)
+	check("unmark", MarkDiscussionAnswer("", "K1", false), "unmarkDiscussionCommentAsAnswer")
+	check("lock", LockDiscussion("", "D1", true), "lockLockable", `"id":"D1"`)
+	check("unlock", LockDiscussion("", "D1", false), "unlockLockable")
+	if CloseDiscussion("", "D1", "WHATEVER") == nil || CloseDiscussion("", "", "") == nil || ReopenDiscussion("", " ") == nil ||
+		MarkDiscussionAnswer("", "", true) == nil || LockDiscussion("", "", true) == nil {
+		t.Error("a bad close reason or an empty id was accepted")
+	}
+}
+
+func TestParseDiscussionKnowsIfTheCategoryTakesAnAnswer(t *testing.T) {
+	d, err := ParseDiscussion([]byte(`{"data":{"repository":{"hasDiscussionsEnabled":true,"discussion":{"id":"D","number":1,"title":"t","category":{"name":"Q&A","isAnswerable":true},"comments":{"totalCount":0,"nodes":[]}}}}}`))
+	if err != nil || !d.Answerable {
+		t.Errorf("%+v %v", d, err)
 	}
 }

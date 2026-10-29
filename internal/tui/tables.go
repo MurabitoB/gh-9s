@@ -109,7 +109,7 @@ func rollupState(checks []rollupRef) (string, state) {
 // The list leaves the checks out: statusCheckRollup is by far its heaviest field and makes GitHub time
 // out (504) on repos whose PRs have many checks. They are fetched on their own, see prchecks.go.
 func prListArgs(r ghcli.RepoRef, f ghcli.PRFilter) []string {
-	return prQueryArgs(r, f, 50, "number,title,author,headRefName,isDraft,reviewDecision,updatedAt,url")
+	return prQueryArgs(r, f, 50, "number,title,state,author,headRefName,isDraft,reviewDecision,updatedAt,url")
 }
 
 // prQueryArgs is the `gh pr list` command for r, narrowed by f, asking for the given JSON fields.
@@ -175,6 +175,7 @@ type prAuthor struct {
 type prListItem struct {
 	Number       int         `json:"number"`
 	Title        string      `json:"title"`
+	State        string      `json:"state"`  // OPEN, CLOSED or MERGED
 	Author       *prAuthor   `json:"author"` // null for a deleted account
 	Head         string      `json:"headRefName"`
 	Draft        bool        `json:"isDraft"`
@@ -208,11 +209,22 @@ func prRows(prs []prListItem, currentBranch string) table {
 		if p.Draft {
 			title = "[draft] " + title
 		}
+		switch p.State {
+		case "CLOSED":
+			title = "[closed] " + title
+		case "MERGED":
+			title = "[merged] " + title
+		}
 		if currentBranch != "" && p.Head == currentBranch {
 			num = "*" + num
 		}
 		icon := icons.PROpen
-		if p.Draft {
+		switch {
+		case p.State == "MERGED":
+			icon = icons.PRMerged
+		case p.State == "CLOSED":
+			icon = icons.PRClosed
+		case p.Draft:
 			icon = icons.PRDraft
 		}
 		num = withIcon(icon, num)

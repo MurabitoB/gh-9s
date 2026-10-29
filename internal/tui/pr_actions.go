@@ -14,6 +14,12 @@ import (
 var (
 	commentPR = ghcli.CommentPR
 	reviewPR  = ghcli.ReviewPR
+	closePR   = ghcli.ClosePR
+	reopenPR  = ghcli.ReopenPR
+	readyPR   = ghcli.ReadyPR
+	editPR    = ghcli.EditPR
+
+	updatePRBranch = ghcli.UpdatePRBranch
 )
 
 // prAction is a PR action being put together through dialogs. It remembers the repo and
@@ -35,6 +41,7 @@ type prAction struct {
 	want      string   // for a list being fetched: "labels" or "assignees"
 	current   []string // labels or assignees the issue has now, for diffing a multi-choice answer
 	discID    string   // a discussion comment: the discussion's own id
+	commentID string   // a discussion comment to mark as the answer
 	replyTo   string   // and the top-level comment it replies to ("" = a new comment)
 }
 

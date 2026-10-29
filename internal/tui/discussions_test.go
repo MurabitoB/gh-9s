@@ -16,8 +16,13 @@ type discCall struct {
 	discussionID, body, reply string
 }
 
+type discWrite struct{ op, id, arg string }
+
 type discFakes struct {
 	listCats []string // the category of every list read
+	filters  []ghcli.DiscFilter
+	limits   []int
+	writes   []discWrite
 	opened   []string // the number of every discussion read
 	comments []discCall
 	err      error
@@ -36,7 +41,7 @@ func fixtureDiscList() ghcli.DiscussionList {
 
 func fixtureDisc() ghcli.DiscussionDetail {
 	return ghcli.DiscussionDetail{ID: "D1", Number: 42, Title: "How do I retry?", Body: "Please help.", Author: "ann", Category: "Q&A", Enabled: true,
-		URL: "https://github.com/acme/api/discussions/42", Answered: true, CommentTotal: 2,
+		URL: "https://github.com/acme/api/discussions/42", Answered: true, Answerable: true, CommentTotal: 2,
 		Comments: []ghcli.DiscComment{
 			{ID: "K1", Author: "bob", Body: "Use a loop.", CreatedAt: "2026-10-23T11:00:00Z", IsAnswer: true, ReplyTotal: 2,
 				Replies: []ghcli.DiscReply{{ID: "R1", Author: "cy", Body: "Thanks!", CreatedAt: "2026-10-23T12:00:00Z"}, {ID: "R2", Author: "ann", Body: "Works.", CreatedAt: "2026-10-23T13:00:00Z"}}},
@@ -48,9 +53,27 @@ func installDisc(t *testing.T) *discFakes {
 	t.Helper()
 	f := &discFakes{list: fixtureDiscList(), detail: fixtureDisc()}
 	oL, oD, oC := fetchDiscList, fetchDisc, commentDisc
-	fetchDiscList = func(tg ghcli.RepoRef, cat string) (ghcli.DiscussionList, error) {
-		f.listCats = append(f.listCats, cat)
+	oClose, oReopen, oMark, oLock := closeDisc, reopenDisc, markDiscAnswer, lockDisc
+	fetchDiscList = func(tg ghcli.RepoRef, flt ghcli.DiscFilter, limit int) (ghcli.DiscussionList, error) {
+		f.listCats = append(f.listCats, flt.Category)
+		f.filters, f.limits = append(f.filters, flt), append(f.limits, limit)
 		return f.list, nil
+	}
+	closeDisc = func(tg ghcli.RepoRef, id, reason string) error {
+		f.writes = append(f.writes, discWrite{"close", id, reason})
+		return f.err
+	}
+	reopenDisc = func(tg ghcli.RepoRef, id string) error {
+		f.writes = append(f.writes, discWrite{"reopen", id, ""})
+		return f.err
+	}
+	markDiscAnswer = func(tg ghcli.RepoRef, id string, mark bool) error {
+		f.writes = append(f.writes, discWrite{map[bool]string{true: "mark", false: "unmark"}[mark], id, ""})
+		return f.err
+	}
+	lockDisc = func(tg ghcli.RepoRef, id string, lock bool) error {
+		f.writes = append(f.writes, discWrite{map[bool]string{true: "lock", false: "unlock"}[lock], id, ""})
+		return f.err
 	}
 	fetchDisc = func(tg ghcli.RepoRef, number string) (ghcli.DiscussionDetail, error) {
 		f.opened = append(f.opened, number)
@@ -60,7 +83,10 @@ func installDisc(t *testing.T) *discFakes {
 		f.comments = append(f.comments, discCall{tg, id, body, reply})
 		return f.err
 	}
-	t.Cleanup(func() { fetchDiscList, fetchDisc, commentDisc = oL, oD, oC })
+	t.Cleanup(func() {
+		fetchDiscList, fetchDisc, commentDisc = oL, oD, oC
+		closeDisc, reopenDisc, markDiscAnswer, lockDisc = oClose, oReopen, oMark, oLock
+	})
 	return f
 }
 
@@ -462,5 +488,206 @@ func TestFailedCommentFreesTheNextOne(t *testing.T) {
 	m = runCmd(m, cmd)
 	if m.discBusy {
 		t.Error("still busy after a failure")
+	}
+}
+
+// ---- state filters, paging ----------------------------------------------------------------------------------------
+
+func TestDiscussionListReadsOpenOnesFirstWithTheFirstPage(t *testing.T) {
+	f := installDisc(t)
+	discListModel(t)
+	if len(f.filters) != 1 || f.filters[0] != (ghcli.DiscFilter{}) || f.limits[0] != ghcli.DiscussionListLimit {
+		t.Errorf("filters %+v limits %v", f.filters, f.limits)
+	}
+}
+
+func TestDiscussionStateKeysFilterOnTheServerAndTheTitleSaysSo(t *testing.T) {
+	f := installDisc(t)
+	m := discListModel(t)
+	for key, want := range map[string]string{"C": "closed", "A": "all", "O": ""} {
+		m = keyAll(m, key)
+		if got := f.filters[len(f.filters)-1].State; got != want {
+			t.Errorf("%s read state %q; want %q", key, got, want)
+		}
+	}
+	m = keyAll(m, "C")
+	if s := screenText(m); !strings.Contains(s, "filter=closed") {
+		t.Errorf("title lacks the filter:\n%s", s)
+	}
+	m = keyAll(m, "O")
+	if s := screenText(m); strings.Contains(s, "filter=") {
+		t.Errorf("the plain open list needs no filter label:\n%s", s)
+	}
+}
+
+func TestDiscussionAnswerKeysToggleAndKeepTheState(t *testing.T) {
+	f := installDisc(t)
+	m := discListModel(t)
+	m = keyAll(m, "C", "u")
+	if got := f.filters[len(f.filters)-1]; got != (ghcli.DiscFilter{State: "closed", Answer: "unanswered"}) {
+		t.Errorf("filter %+v", got)
+	}
+	m = keyAll(m, "a")
+	if got := f.filters[len(f.filters)-1].Answer; got != "answered" {
+		t.Errorf("a after u should switch to answered, got %q", got)
+	}
+	keyAll(m, "a")
+	if got := f.filters[len(f.filters)-1].Answer; got != "" {
+		t.Errorf("a again should clear it, got %q", got)
+	}
+}
+
+func TestFilterChangeStartsOverAtTheFirstPage(t *testing.T) {
+	f := installDisc(t)
+	f.list.More, f.list.Total = true, 120
+	m := discListModel(t)
+	m = keyAll(m, "m")
+	if got := f.limits[len(f.limits)-1]; got != 2*ghcli.DiscussionListLimit {
+		t.Fatalf("m read %d; want a second page", got)
+	}
+	keyAll(m, "C")
+	if got := f.limits[len(f.limits)-1]; got != ghcli.DiscussionListLimit {
+		t.Errorf("a new filter read %d; want the first page again", got)
+	}
+}
+
+func TestMLoadsMoreOnlyWhenThereIsMore(t *testing.T) {
+	f := installDisc(t)
+	m := discListModel(t)
+	n := len(f.limits)
+	m = keyAll(m, "m")
+	if len(f.limits) != n || !strings.Contains(ansi.Strip(m.status), "no more") {
+		t.Errorf("reads %d -> %d, status %q", n, len(f.limits), m.status)
+	}
+	f.list.More, f.list.Total = true, 900
+	m = keyAll(discListModel(t), "m", "m", "m", "m", "m", "m", "m", "m", "m", "m", "m")
+	if got := f.limits[len(f.limits)-1]; got != ghcli.DiscussionListMax {
+		t.Errorf("the list grew to %d; want it capped at %d", got, ghcli.DiscussionListMax)
+	}
+}
+
+// ---- close, reopen, answer, lock ----------------------------------------------------------------------------------
+
+func TestXPicksACloseReasonThenCloses(t *testing.T) {
+	f := installDisc(t)
+	m := keyAll(discOpen(t), "x")
+	if m.dlg == nil || m.dlg.id != "disc.close" || len(m.dlg.choices) != 3 || !strings.Contains(m.dlg.title, "acme/api#42") {
+		t.Fatalf("dialog %+v", m.dlg)
+	}
+	if len(f.writes) != 0 {
+		t.Fatal("closed before the answer")
+	}
+	m, cmd := answer(m, "disc.close", true, "", "OUTDATED")
+	m = runCmd(m, cmd)
+	if len(f.writes) != 1 || f.writes[0] != (discWrite{"close", "D1", "OUTDATED"}) || !strings.Contains(ansi.Strip(m.status), "closed") {
+		t.Errorf("writes %+v status %q", f.writes, m.status)
+	}
+	f = installDisc(t)
+	m = keyAll(discOpen(t), "x")
+	m, cmd = answer(m, "disc.close", false, "")
+	runCmd(m, cmd)
+	if len(f.writes) != 0 {
+		t.Errorf("a cancelled close wrote %+v", f.writes)
+	}
+}
+
+func TestXAndXSayWhenTheDiscussionIsAlreadyInThatState(t *testing.T) {
+	f := installDisc(t)
+	f.detail.Closed = true
+	m := keyAll(discOpen(t), "x")
+	if m.dlg != nil || !strings.Contains(ansi.Strip(m.status), "already closed") {
+		t.Errorf("x on a closed one: dialog %v status %q", m.dlg != nil, m.status)
+	}
+	m = keyAll(m, "X")
+	if len(f.writes) != 1 || f.writes[0] != (discWrite{"reopen", "D1", ""}) || !strings.Contains(ansi.Strip(m.status), "reopened") {
+		t.Errorf("writes %+v status %q", f.writes, m.status)
+	}
+	f = installDisc(t)
+	m = keyAll(discOpen(t), "X")
+	if len(f.writes) != 0 || !strings.Contains(ansi.Strip(m.status), "already open") {
+		t.Errorf("X on an open one: writes %+v status %q", f.writes, m.status)
+	}
+}
+
+func selectComment(m model, id string) model {
+	for i := 0; i < 8; i++ {
+		if st, _ := m.screenData(viewDiscussion).(discState); st.sel == id {
+			return m
+		}
+		m = keyAll(m, "n")
+	}
+	return m
+}
+
+func TestAMarksTheSelectedCommentAsTheAnswerAfterAsking(t *testing.T) {
+	f := installDisc(t)
+	f.detail.Comments[0].IsAnswer, f.detail.Answered = false, false
+	m := keyAll(discOpen(t), "A")
+	if m.dlg != nil || !strings.Contains(ansi.Strip(m.status), "select a comment first") {
+		t.Fatalf("A with nothing selected: dialog %v status %q", m.dlg != nil, m.status)
+	}
+	m = keyAll(selectComment(m, "K2"), "A")
+	if m.dlg == nil || m.dlg.kind != dialogConfirm || !strings.Contains(m.View(), "dee") || len(f.writes) != 0 {
+		t.Fatalf("want a question naming the author, nothing written yet; dialog %v", m.dlg != nil)
+	}
+	m = keyAll(m, "y")
+	if len(f.writes) != 1 || f.writes[0] != (discWrite{"mark", "K2", ""}) {
+		t.Errorf("writes %+v", f.writes)
+	}
+}
+
+func TestAOnTheCurrentAnswerTakesTheMarkAway(t *testing.T) {
+	f := installDisc(t)
+	m := keyAll(selectComment(discOpen(t), "K1"), "A")
+	if m.dlg == nil || !strings.Contains(m.View(), "no longer") {
+		t.Fatalf("want a question about removing the mark; dialog %v", m.dlg != nil)
+	}
+	keyAll(m, "y")
+	if len(f.writes) != 1 || f.writes[0] != (discWrite{"unmark", "K1", ""}) {
+		t.Errorf("writes %+v", f.writes)
+	}
+}
+
+func TestACannotMarkAReplyOrInACategoryWithoutAnswers(t *testing.T) {
+	f := installDisc(t)
+	m := keyAll(selectComment(discOpen(t), "R1"), "A")
+	if m.dlg != nil || !strings.Contains(ansi.Strip(m.status), "top-level") {
+		t.Errorf("a reply: dialog %v status %q", m.dlg != nil, m.status)
+	}
+	f.detail.Answerable = false
+	m = keyAll(selectComment(discOpen(t), "K2"), "A")
+	if m.dlg != nil || !strings.Contains(ansi.Strip(m.status), "no answers") || len(f.writes) != 0 {
+		t.Errorf("a category without answers: dialog %v status %q writes %+v", m.dlg != nil, m.status, f.writes)
+	}
+}
+
+func TestLLocksAndUnlocksAfterAsking(t *testing.T) {
+	f := installDisc(t)
+	m := keyAll(discOpen(t), "L")
+	if m.dlg == nil || m.dlg.kind != dialogConfirm || !strings.Contains(m.View(), "Lock") || len(f.writes) != 0 {
+		t.Fatalf("want a question about locking; dialog %v", m.dlg != nil)
+	}
+	keyAll(m, "y")
+	if len(f.writes) != 1 || f.writes[0] != (discWrite{"lock", "D1", ""}) {
+		t.Errorf("writes %+v", f.writes)
+	}
+	f = installDisc(t)
+	f.detail.Locked = true
+	m = keyAll(discOpen(t), "L")
+	if m.dlg == nil || !strings.Contains(m.View(), "Unlock") {
+		t.Fatalf("want a question about unlocking; dialog %v", m.dlg != nil)
+	}
+	keyAll(m, "y")
+	if len(f.writes) != 1 || f.writes[0] != (discWrite{"unlock", "D1", ""}) {
+		t.Errorf("writes %+v", f.writes)
+	}
+}
+
+func TestAFailedDiscussionWriteIsShown(t *testing.T) {
+	f := installDisc(t)
+	f.err = errors.New("Resource not accessible by integration")
+	m := keyAll(discOpen(t), "L", "y")
+	if !strings.Contains(ansi.Strip(m.status), "✗") || !strings.Contains(ansi.Strip(m.status), "not accessible") {
+		t.Errorf("status %q", m.status)
 	}
 }
