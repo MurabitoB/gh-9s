@@ -45,7 +45,7 @@ func (m model) helpGroups() []helpGroup {
 		gs = append(gs, helpGroup{"Workflows / favorites", []helpKey{{"j k", "move"}, {"enter", "its runs"}, {"t", "trigger (form)"}, {"f", "favorite / unfavorite"},
 			{"a", "set an alias"}, {"e", "enable / disable (workflows)"}, {"o", "open in the browser"}}})
 	case viewPRs:
-		gs = append(gs, helpGroup{"Pull requests", []helpKey{{"j k", "move"}, {"enter", "open the PR"}, {"u", "only mine"}, {"e", "review requested from me"}, {"a", "all"}, {"M", "add to / remove from Projects (asks first)"}, {"f", "pin / unpin this repo"}, {"o", "open in the browser"}}})
+		gs = append(gs, helpGroup{"Pull requests", []helpKey{{"j k", "move"}, {"enter", "open the PR"}, {"O C m A", "open / closed / merged / all states"}, {"u", "only mine"}, {"e", "review requested from me"}, {"a", "anyone"}, {"M", "add to / remove from Projects (asks first)"}, {"f", "pin / unpin this repo"}, {"o", "open in the browser"}}})
 	case viewIssues:
 		gs = append(gs, helpGroup{"Issues", []helpKey{{"j k", "move"}, {"enter", "open the issue"}, {"a", "send to a coding agent (asks first)"}, {"O C A", "open / closed / all"}, {"u", "assigned to me"}, {"m", "opened by me"}, {"M", "add to / remove from Projects (asks first)"}, {"f", "pin / unpin this repo"}, {"o", "open in the browser"}}})
 	case viewDiscussions:
@@ -63,7 +63,7 @@ func (m model) helpGroups() []helpGroup {
 	case viewInbox:
 		gs = append(gs, helpGroup{"Inbox", []helpKey{{"tab l →", "next tab"}, {"shift+tab h ←", "previous tab"}, {"j k", "move"}, {"enter", "open the item (in its own repo)"}, {"o", "open in the browser"}, {"R", "refresh (at most once in a while)"}}})
 	case viewPRDetail:
-		gs = append(gs, helpGroup{"Pull request", []helpKey{{"c", "checks"}, {"d", "diff / code review"}, {"C", "comment"}, {"r", "review: approve / request changes / comment"}, {"m", "merge"}, {"M", "add to / remove from Projects (asks first)"}, {"tab", "select an image"}, {"enter", "show the selected image"}, {"o", "open (the image, else the PR)"}}})
+		gs = append(gs, helpGroup{"Pull request", []helpKey{{"c", "checks"}, {"d", "diff / code review"}, {"C", "comment"}, {"r", "review: approve / request changes / comment"}, {"m", "merge"}, {"x", "close without merging (asks first)"}, {"X", "reopen a closed PR"}, {"D", "mark a draft ready for review / turn a PR into a draft (asks first)"}, {"l", "labels"}, {"s", "assignees"}, {"M", "add to / remove from Projects (asks first)"}, {"tab", "select an image"}, {"enter", "show the selected image"}, {"o", "open (the image, else the PR)"}}})
 		gs = append(gs, helpGroup{"Scroll", helpScroll})
 	case viewIssue:
 		gs = append(gs, helpGroup{"Issue", []helpKey{{"a", "send to a coding agent (asks first)"}, {"C", "comment"}, {"x", "close"}, {"X", "reopen"}, {"l", "labels"}, {"s", "assignees"}, {"M", "add to / remove from Projects (asks first)"}, {"tab", "select an image"}, {"enter", "show the selected image"}, {"o", "open"}}})

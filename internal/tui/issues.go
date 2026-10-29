@@ -262,7 +262,7 @@ func issueKey(m model, k tea.KeyMsg) (model, tea.Cmd, bool) {
 			} else {
 				names, err = listAssignees(tg)
 			}
-			return choicesMsg{id: id, kind: kind, names: names, err: err}
+			return choicesMsg{view: viewIssue, id: id, kind: kind, names: names, err: err}
 		}, true
 	case "o":
 		if st.d.URL != "" {
@@ -354,8 +354,9 @@ func stateWord(d ghcli.IssueDetail, word string) string {
 
 // choicesMsg carries the repo's labels or assignable users for a multi-choice dialog.
 type choicesMsg struct {
-	id    string // the issue the lists were fetched for
-	kind  string // "labels" or "assignees"
+	view  viewKind // the screen they were asked from: the issue or the PR detail
+	id    string   // the issue or PR the lists were fetched for
+	kind  string   // "labels" or "assignees"
 	names []string
 	err   error
 }
@@ -364,7 +365,11 @@ type choicesMsg struct {
 // list, even if the repo no longer offers them, so they can still be removed.
 func (m model) choicesLoaded(msg choicesMsg) model {
 	p := m.pending
-	if p == nil || m.view != viewIssue || msg.id != m.itemID(m.issue) || p.want != msg.kind || m.dlg != nil {
+	number, prefix := m.issue, "issue."
+	if msg.view == viewPRDetail {
+		number, prefix = m.pr, "pr."
+	}
+	if p == nil || m.view != msg.view || msg.id != m.itemID(number) || p.want != msg.kind || m.dlg != nil {
 		return m // nothing is waiting for this, or the user has moved on or is busy with a dialog
 	}
 	if msg.err != nil {
@@ -385,9 +390,9 @@ func (m model) choicesLoaded(msg choicesMsg) model {
 	for i, n := range names {
 		choices[i] = choice{label: n, value: n}
 	}
-	id, title := "issue.labels", "Labels for "+p.label
+	id, title := prefix+"labels", "Labels for "+p.label
 	if msg.kind == "assignees" {
-		id, title = "issue.assignees", "Assignees for "+p.label
+		id, title = prefix+"assignees", "Assignees for "+p.label
 	}
 	return m.withDialog(newChoiceDialog(id, title, choices, true, p.current))
 }

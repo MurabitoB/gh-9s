@@ -14,6 +14,10 @@ import (
 var (
 	commentPR = ghcli.CommentPR
 	reviewPR  = ghcli.ReviewPR
+	closePR   = ghcli.ClosePR
+	reopenPR  = ghcli.ReopenPR
+	readyPR   = ghcli.ReadyPR
+	editPR    = ghcli.EditPR
 )
 
 // prAction is a PR action being put together through dialogs. It remembers the repo and

@@ -52,7 +52,7 @@ func init() {
 		},
 		key:    prDetailKey,
 		body:   prDetailBody,
-		footer: "c checks  d diff  C comment  r review  m merge  M projects  o open  j/k scroll",
+		footer: "c checks  d diff  C comment  r review  m merge  x close  X reopen  D draft  l labels  s assignees  M projects  o open  j/k scroll",
 	})
 }
 
@@ -100,6 +100,9 @@ func prDetailKey(m model, k tea.KeyMsg) (model, tea.Cmd, bool) {
 		return next, cmd, true
 	case "C":
 		return m.startPRComment(), nil, true
+	case "x", "X", "D", "l", "s":
+		next, cmd := m.prStateKey(k.String(), st.d)
+		return next, cmd, true
 	case "r":
 		return m.startPRReview(), nil, true
 	case "o":
