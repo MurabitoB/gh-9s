@@ -71,7 +71,7 @@ func init() {
 		},
 		key:    issueKey,
 		body:   issueBody,
-		footer: "a agent  C comment  x close  X reopen  L lock  l labels  s assignees  M projects  o open  j/k scroll",
+		footer: "a agent  C comment  x/X close/reopen  L lock  l/s labels  M projects  o open  j/k scroll",
 	})
 	dialogHandlers["issue.close"] = func(m model, r dialogResultMsg) (model, tea.Cmd) {
 		p := m.pending
@@ -277,9 +277,9 @@ func issueKey(m model, k tea.KeyMsg) (model, tea.Cmd, bool) {
 		}
 		m, p := m.startIssueAction(st)
 		if st.d.Locked {
-			return m.withDialog(newConfirmDialog("issue.unlock", "Unlock "+p.label+"?", st.d.Title+"\n\nPeople can comment on it again.")), nil, true
+			return m.withDialog(newConfirmDialog("issue.unlock", "Unlock "+p.label+"?", st.d.Title+" — people can comment on it again")), nil, true
 		}
-		return m.withDialog(newConfirmDialog("issue.lock", "Lock "+p.label+"?", st.d.Title+"\n\nNobody without write access can comment on it until it is unlocked.")), nil, true
+		return m.withDialog(newConfirmDialog("issue.lock", "Lock "+p.label+"?", st.d.Title+" — nobody without write access can comment on it until it is unlocked")), nil, true
 	case "l", "s":
 		m, p := m.startIssueAction(st)
 		kind := "labels"

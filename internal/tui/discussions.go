@@ -115,7 +115,7 @@ func init() {
 		},
 		key:    discKey,
 		body:   discBody,
-		footer: "C comment  r reply  n/N comment  x close  X reopen  A answer  L lock  o open  j/k scroll",
+		footer: "C comment  r reply  n/N pick  x/X close/reopen  A answer  L lock  o open  j/k scroll",
 	})
 	dialogHandlers["disc.category"] = func(m model, r dialogResultMsg) (model, tea.Cmd) {
 		st, _ := m.screenData(viewDiscussions).(discListState)
@@ -560,9 +560,9 @@ func (m model) discStateKey(key string, st discState, doc discDoc) (model, tea.C
 		}
 	case "L":
 		if d.Locked {
-			return m.withDialog(newConfirmDialog("disc.unlock", "Unlock "+label+"?", d.Title+"\n\nPeople can comment on it again.")), nil
+			return m.withDialog(newConfirmDialog("disc.unlock", "Unlock "+label+"?", d.Title+" — people can comment on it again")), nil
 		}
-		return m.withDialog(newConfirmDialog("disc.lock", "Lock "+label+"?", d.Title+"\n\nNobody can comment on it until it is unlocked.")), nil
+		return m.withDialog(newConfirmDialog("disc.lock", "Lock "+label+"?", d.Title+" — nobody can comment on it until it is unlocked")), nil
 	}
 	// A: the selected comment is, or stops being, the answer.
 	e, _, has := doc.entry(st.sel)
@@ -580,7 +580,7 @@ func (m model) discStateKey(key string, st discState, doc discDoc) (model, tea.C
 	m.pending.commentID = e.id
 	for _, c := range d.Comments {
 		if c.ID == e.id && c.IsAnswer {
-			return m.withDialog(newConfirmDialog("disc.unmark", "Remove the answer mark in "+label+"?", e.author+"'s comment is no longer the answer.")), nil
+			return m.withDialog(newConfirmDialog("disc.unmark", "Remove the answer mark in "+label+"?", e.author+"'s comment is no longer the answer")), nil
 		}
 	}
 	return m.withDialog(newConfirmDialog("disc.mark", "Mark "+e.author+"'s comment as the answer of "+label+"?", d.Title)), nil

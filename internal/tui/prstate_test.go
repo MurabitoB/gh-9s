@@ -176,7 +176,7 @@ func TestPRAssigneesKeyChangesAssignees(t *testing.T) {
 
 func TestPRDetailFooterAndHelpNameTheNewKeys(t *testing.T) {
 	m := prDetailScreen(t, withState("OPEN", false))
-	if v := m.View(); !strings.Contains(v, "x: close") || !strings.Contains(v, "D: draft") {
+	if v := m.View(); !strings.Contains(v, "x/X: close/reopen") || !strings.Contains(v, "D: draft") {
 		t.Errorf("footer lacks the new keys:\n%s", v)
 	}
 }

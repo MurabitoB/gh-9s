@@ -3,10 +3,10 @@
 A [k9s](https://k9scli.io)-style terminal UI for GitHub, as a `gh` extension.
 
 - **Actions:** trigger workflows, watch runs as a live job graph, keep favorite workflows one keypress away.
-- **Pull requests:** list and filter, see checks (and jump into the Actions run behind a check), read the diff, comment, review and merge.
-- **Issues:** list and filter, read, comment, close and reopen, manage labels and assignees.
+- **Pull requests:** list and filter (open, closed, merged), see checks (and jump into the Actions run behind a check), read the diff, comment, review and merge; close and reopen, switch draft and ready, update the branch, edit labels and assignees.
+- **Issues:** list and filter, read, comment, close (as completed or not planned) and reopen, lock, manage labels and assignees.
 - **Send to an agent:** press `a` on an issue to open a workspace (Orca) or pane (herdr, tmux), start Claude Code or Devin there and give it the issue ([guide](https://murabitob.github.io/gh-9s/guides/send-to-agent/)).
-- **Discussions:** list by category, read with the replies under each comment, comment and reply.
+- **Discussions:** list by category, state and answered, read with the replies under each comment, comment and reply, close and reopen, mark the answer, lock.
 - **Wiki:** read pages and follow their links, edit in your `$EDITOR`, add and delete pages (a wiki is a git repo, so each change is a commit).
 - **Projects:** a board per Status column, move cards, mark several and change them at once, undo (every change asks first).
 - **Repos:** an interactive picker to move between any repo you can reach.
@@ -24,6 +24,10 @@ A [k9s](https://k9scli.io)-style terminal UI for GitHub, as a `gh` extension.
 **Project boards** — move a card, undo, mark two cards and move both (every change asks first):
 
 ![A Project board: move a card, undo, mark two cards and move both](docs/demo/board.gif)
+
+**States** — closed and merged PRs, closing and draft ready each ask first, Discussions by state with close, answer and lock:
+
+![gh-9s: PR states, closing, and Discussions](docs/demo/states.gif)
 
 **Issues and everything else** — filter, read, jump between views, `?` for the keys of each screen:
 

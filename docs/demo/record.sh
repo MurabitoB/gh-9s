@@ -10,7 +10,7 @@ trap 'rm -rf "$work"' EXIT
 "$here/setup.sh" "$work/env" > "$work/env.sh"
 export DEMO="$work"
 cd "$here"
-[ $# -gt 0 ] || set -- tapes/*.tape
+[ $# -gt 0 ] || set -- $(ls tapes/*.tape | grep -v /common.tape) # common.tape is included by the others, not recorded
 for t in "$@"; do
   echo "recording $t"
   vhs "$t"

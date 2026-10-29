@@ -25,7 +25,7 @@ func (m model) prStateKey(key string, d ghcli.PRDetail) (model, tea.Cmd) {
 			return note("already merged — nothing to close")
 		}
 		m, p := m.startPRAction()
-		return m.withDialog(newConfirmDialog("pr.close", "Close "+p.label+"?", d.Title+"\n\nIt is closed without being merged.")), nil
+		return m.withDialog(newConfirmDialog("pr.close", "Close "+p.label+"?", d.Title+" — closed without being merged")), nil
 	case "X":
 		switch d.State {
 		case "OPEN":
@@ -44,7 +44,7 @@ func (m model) prStateKey(key string, d ghcli.PRDetail) (model, tea.Cmd) {
 		}
 		m, p := m.startPRAction()
 		if d.IsDraft {
-			return m.withDialog(newConfirmDialog("pr.ready", "Mark "+p.label+" ready for review?", d.Title+"\n\nReviewers are notified.")), nil
+			return m.withDialog(newConfirmDialog("pr.ready", "Mark "+p.label+" ready for review?", d.Title+" — reviewers are notified")), nil
 		}
 		return m.withDialog(newConfirmDialog("pr.draft", "Turn "+p.label+" into a draft?", d.Title)), nil
 	case "U":
@@ -52,7 +52,7 @@ func (m model) prStateKey(key string, d ghcli.PRDetail) (model, tea.Cmd) {
 			return note("only an open PR's branch can be updated")
 		}
 		m, p := m.startPRAction()
-		return m.withDialog(newConfirmDialog("pr.update", "Update "+p.label+"?", "Merge "+orDash(d.BaseRef)+" into "+orDash(d.HeadRef)+". This adds a commit to the PR's branch.")), nil
+		return m.withDialog(newConfirmDialog("pr.update", "Update "+p.label+"?", "Merge "+orDash(d.BaseRef)+" into "+orDash(d.HeadRef)+": adds a commit to the PR's branch")), nil
 	}
 	// l, s: fetch the repo's labels or assignable users, then show them with the PR's own ticked.
 	m, p := m.startPRAction()

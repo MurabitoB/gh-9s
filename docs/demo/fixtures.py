@@ -104,10 +104,23 @@ PRS = [
     (222, "Bump dependencies", "chore/deps", False, "APPROVED", "leo", dict(days=2)),
 ]
 
+# pull requests that are no longer open: (number, title, branch, state, author, age)
+PRS_DONE = [
+    (231, "Fix the flaky sync test", "fix/flaky-test", "MERGED", "mira", dict(days=3)),
+    (227, "Try a new logger", "exp/logger", "CLOSED", "leo", dict(days=5)),
+    (219, "Document the retry settings", "docs/retry", "MERGED", "jun", dict(days=8)),
+]
+
 PR_LIST = [
-    {"number": n, "title": t, "author": user(a), "headRefName": br, "isDraft": dr, "reviewDecision": rd,
+    {"number": n, "title": t, "state": "OPEN", "author": user(a), "headRefName": br, "isDraft": dr, "reviewDecision": rd,
      "updatedAt": ago(**when), "url": URL + "/pull/%d" % n}
     for (n, t, br, dr, rd, a, when) in PRS
+]
+
+PR_DONE = [
+    {"number": n, "title": t, "state": st, "author": user(a), "headRefName": br, "isDraft": False, "reviewDecision": "APPROVED" if st == "MERGED" else "",
+     "updatedAt": ago(**when), "url": URL + "/pull/%d" % n}
+    for (n, t, br, st, a, when) in PRS_DONE
 ]
 
 OK = [{"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS"}]
@@ -173,11 +186,15 @@ index 0000000..51d2c3e 100644
 
 def pr(n):
     n = int(n)
-    row = next(p for p in PRS if p[0] == n)
+    done = next((p for p in PRS_DONE if p[0] == n), None)
+    if done:
+        row = (n, done[1], done[2], False, "APPROVED" if done[3] == "MERGED" else "", done[4], done[5])
+    else:
+        row = next(p for p in PRS if p[0] == n)
     _, t, br, dr, rd, a, when = row
     return {
         "number": n, "title": t, "body": "Retries a failed send up to five times with exponential backoff and jitter.\n\nFixes #231.\n\n- [x] test for the flaky server\n- [x] docs",
-        "author": user(a), "state": "OPEN", "isDraft": dr, "baseRefName": "main", "headRefName": br, "headRefOid": "9b83f10c2a",
+        "author": user(a), "state": done[3] if done else "OPEN", "isDraft": dr, "baseRefName": "main", "headRefName": br, "headRefOid": "9b83f10c2a",
         "url": URL + "/pull/%d" % n, "reviewDecision": rd, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
         "additions": 31, "deletions": 4, "changedFiles": 2, "labels": [label("bug")],
         "comments": [{"author": user("noor"), "body": "Looks good. Could the limit be configurable?", "createdAt": ago(minutes=30)}],
@@ -325,10 +342,14 @@ DISCUSSIONS = [
 ]
 
 
-def discussion_list(cat_id):
+def discussion_list(cat_id, states=(), answered=None):
     nodes = []
     for (n, t, c, a, ans, closed, locked, cm, when, body) in DISCUSSIONS:
         if cat_id and dict((i, nm) for i, nm, _ in CATS).get(cat_id) != c:
+            continue
+        if states and ("CLOSED" if closed else "OPEN") not in states:
+            continue
+        if answered is not None and ans != answered:
             continue
         nodes.append({"id": "D_%d" % n, "number": n, "title": t, "body": body, "url": URL + "/discussions/%d" % n, "updatedAt": ago(**when),
                       "closed": closed, "locked": locked, "isAnswered": ans, "author": user(a), "category": {"name": c}, "comments": {"totalCount": cm}})
@@ -341,7 +362,7 @@ def discussion():
     d = DISCUSSIONS[0]
     return {"data": {"repository": {"hasDiscussionsEnabled": True, "discussion": {
         "id": "D_42", "number": 42, "title": d[1], "body": d[9], "url": URL + "/discussions/42", "closed": False, "locked": False, "isAnswered": True,
-        "createdAt": ago(hours=5), "author": user("ann"), "category": {"name": "Q&A"},
+        "createdAt": ago(hours=5), "author": user("ann"), "category": {"name": "Q&A", "isAnswerable": True},
         "comments": {"totalCount": 2, "nodes": [
             {"id": "K1", "body": "Wrap the call in a loop with a backoff, see #233.", "createdAt": ago(hours=4), "isAnswer": True, "author": user("mira"),
              "replies": {"totalCount": 2, "nodes": [

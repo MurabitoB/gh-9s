@@ -52,7 +52,7 @@ func init() {
 		},
 		key:    prDetailKey,
 		body:   prDetailBody,
-		footer: "c checks  d diff  C comment  r review  m merge  x close  X reopen  D draft  U update  l labels  s assignees  M projects  o open  j/k scroll",
+		footer: "c checks  d diff  C comment  r review  m merge  x/X close/reopen  D draft  U update  l/s labels  o open",
 	})
 }
 
