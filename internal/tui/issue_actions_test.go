@@ -17,6 +17,8 @@ type editCall struct {
 
 type issueActionFakes struct {
 	closes, reopens []string
+	reasons         []string
+	locks, unlocks  []string
 	edits           []editCall
 	labels          []string
 	assignees       []string
@@ -33,7 +35,15 @@ func installIssueActions(t *testing.T, detail ghcli.IssueDetail) *issueActionFak
 		assignees: []string{"erin", "frank", "gina"}}
 	oldView, oldList, oldComment := fetchIssue, fetchIssueList, commentIssue
 	oldLabels, oldAssignees := listLabels, listAssignees
-	oldEdit, oldClose, oldReopen := editIssue, closeIssue, reopenIssue
+	oldEdit, oldClose, oldReopen, oldLock := editIssue, closeIssue, reopenIssue, lockIssue
+	lockIssue = func(r ghcli.RepoRef, n string, lock bool) error {
+		if lock {
+			f.locks = append(f.locks, n)
+		} else {
+			f.unlocks = append(f.unlocks, n)
+		}
+		return f.err
+	}
 	fetchIssue = func(r ghcli.RepoRef, number string) (ghcli.IssueDetail, error) { f.fetches++; return f.detail, nil }
 	fetchIssueList = func(r ghcli.RepoRef, flt ghcli.IssueFilter) (table, error) {
 		return table{cols: []string{"#", "STATE", "TITLE"}, rows: []row{issueRow("14812", "auth login hangs")}}, nil
@@ -44,12 +54,15 @@ func installIssueActions(t *testing.T, detail ghcli.IssueDetail) *issueActionFak
 		f.edits = append(f.edits, editCall{r, n, al, rl, aa, ra})
 		return f.err
 	}
-	closeIssue = func(r ghcli.RepoRef, n string) error { f.closes = append(f.closes, n); return f.err }
+	closeIssue = func(r ghcli.RepoRef, n, reason string) error {
+		f.closes, f.reasons = append(f.closes, n), append(f.reasons, reason)
+		return f.err
+	}
 	reopenIssue = func(r ghcli.RepoRef, n string) error { f.reopens = append(f.reopens, n); return f.err }
 	t.Cleanup(func() {
 		fetchIssue, fetchIssueList, commentIssue = oldView, oldList, oldComment
 		listLabels, listAssignees = oldLabels, oldAssignees
-		editIssue, closeIssue, reopenIssue = oldEdit, oldClose, oldReopen
+		editIssue, closeIssue, reopenIssue, lockIssue = oldEdit, oldClose, oldReopen, oldLock
 	})
 	return f
 }
@@ -78,22 +91,72 @@ func closedIssueDetail() ghcli.IssueDetail {
 	return d
 }
 
-func TestXAsksForConfirmationNamingTheIssueBeforeClosing(t *testing.T) {
+func TestXAsksForTheReasonNamingTheIssueBeforeClosing(t *testing.T) {
 	f := installIssueActions(t, openIssueDetail())
 	m := keyAll(issueScreen(t, f), "x")
-	if m.dlg == nil || m.dlg.kind != dialogConfirm || !strings.Contains(m.View(), "acme/api#14812") || !strings.Contains(m.View(), "auth login hangs") {
-		t.Fatalf("dialog = %+v; want a confirmation naming acme/api#14812 and its title", m.dlg)
+	if m.dlg == nil || m.dlg.id != "issue.close" || len(m.dlg.choices) != 2 || !strings.Contains(m.View(), "acme/api#14812") || !strings.Contains(m.View(), "auth login hangs") {
+		t.Fatalf("dialog = %+v; want a choice of reasons naming acme/api#14812 and its title", m.dlg)
 	}
 	if len(f.closes) != 0 {
-		t.Fatal("nothing may be closed before the confirmation")
+		t.Fatal("nothing may be closed before the answer")
 	}
-	declined := keyAll(m, "n")
+	declined := keyAll(m, "esc")
 	if len(f.closes) != 0 || declined.dlg != nil {
 		t.Errorf("declining must close nothing: %v", f.closes)
 	}
-	m = keyAll(m, "y")
-	if !reflect.DeepEqual(f.closes, []string{"14812"}) || !strings.Contains(m.status, "✓") || !strings.Contains(m.status, "closed") {
-		t.Errorf("closes=%v status=%q", f.closes, m.status)
+	m = keyAll(m, "enter") // the first reason is the default: completed
+	if !reflect.DeepEqual(f.closes, []string{"14812"}) || !reflect.DeepEqual(f.reasons, []string{"completed"}) || !strings.Contains(m.status, "✓") || !strings.Contains(m.status, "closed") {
+		t.Errorf("closes=%v reasons=%v status=%q", f.closes, f.reasons, m.status)
+	}
+}
+
+func TestXCanCloseAsNotPlanned(t *testing.T) {
+	f := installIssueActions(t, openIssueDetail())
+	keyAll(issueScreen(t, f), "x", "down", "enter")
+	if !reflect.DeepEqual(f.reasons, []string{"not planned"}) {
+		t.Errorf("reasons = %v; want not planned", f.reasons)
+	}
+}
+
+func lockedIssueDetail() ghcli.IssueDetail {
+	d := openIssueDetail()
+	d.Locked, d.LockKnown = true, true
+	return d
+}
+
+func TestLLocksAnIssueAfterAskingAndUnlocksALockedOne(t *testing.T) {
+	d := openIssueDetail()
+	d.LockKnown = true
+	f := installIssueActions(t, d)
+	m := keyAll(issueScreen(t, f), "L")
+	if m.dlg == nil || m.dlg.kind != dialogConfirm || !strings.Contains(m.View(), "Lock") || len(f.locks) != 0 {
+		t.Fatalf("want a question about locking, nothing sent; dialog %v", m.dlg != nil)
+	}
+	keyAll(m, "y")
+	if !reflect.DeepEqual(f.locks, []string{"14812"}) || len(f.unlocks) != 0 {
+		t.Errorf("locks=%v unlocks=%v", f.locks, f.unlocks)
+	}
+
+	f = installIssueActions(t, lockedIssueDetail())
+	m = issueScreen(t, f)
+	if !strings.Contains(m.View(), "dana   OPEN   locked") {
+		t.Errorf("the header should say the conversation is locked:\n%s", m.View())
+	}
+	m = keyAll(m, "L")
+	if m.dlg == nil || !strings.Contains(m.View(), "Unlock") {
+		t.Fatalf("want a question about unlocking; dialog %v", m.dlg != nil)
+	}
+	keyAll(m, "y")
+	if !reflect.DeepEqual(f.unlocks, []string{"14812"}) || len(f.locks) != 0 {
+		t.Errorf("locks=%v unlocks=%v", f.locks, f.unlocks)
+	}
+}
+
+func TestLWhenTheLockStateIsUnknownDoesNotGuess(t *testing.T) {
+	f := installIssueActions(t, openIssueDetail()) // LockKnown is false
+	m := keyAll(issueScreen(t, f), "L")
+	if m.dlg != nil || len(f.locks)+len(f.unlocks) != 0 || !strings.Contains(m.status, "locked") {
+		t.Errorf("dialog=%v locks=%v status=%q", m.dlg != nil, f.locks, m.status)
 	}
 }
 
@@ -214,7 +277,7 @@ func TestDetailReloadsAfterEachAction(t *testing.T) {
 	f := installIssueActions(t, openIssueDetail())
 	m := issueScreen(t, f)
 	before := f.fetches
-	m = keyAll(m, "x", "y")
+	m = keyAll(m, "x", "enter")
 	m = keyAll(m, "s", "down", "space", "enter")
 	if f.fetches != before+2 {
 		t.Errorf("fetches %d -> %d; want one reload after each of the two actions", before, f.fetches)

@@ -66,7 +66,7 @@ func (m model) helpGroups() []helpGroup {
 		gs = append(gs, helpGroup{"Pull request", []helpKey{{"c", "checks"}, {"d", "diff / code review"}, {"C", "comment"}, {"r", "review: approve / request changes / comment"}, {"m", "merge"}, {"x", "close without merging (asks first)"}, {"X", "reopen a closed PR"}, {"D", "mark a draft ready for review / turn a PR into a draft (asks first)"}, {"U", "update the branch with its base (asks first)"}, {"l", "labels"}, {"s", "assignees"}, {"M", "add to / remove from Projects (asks first)"}, {"tab", "select an image"}, {"enter", "show the selected image"}, {"o", "open (the image, else the PR)"}}})
 		gs = append(gs, helpGroup{"Scroll", helpScroll})
 	case viewIssue:
-		gs = append(gs, helpGroup{"Issue", []helpKey{{"a", "send to a coding agent (asks first)"}, {"C", "comment"}, {"x", "close"}, {"X", "reopen"}, {"l", "labels"}, {"s", "assignees"}, {"M", "add to / remove from Projects (asks first)"}, {"tab", "select an image"}, {"enter", "show the selected image"}, {"o", "open"}}})
+		gs = append(gs, helpGroup{"Issue", []helpKey{{"a", "send to a coding agent (asks first)"}, {"C", "comment"}, {"x", "close, as completed or not planned"}, {"X", "reopen"}, {"L", "lock / unlock the conversation (asks first)"}, {"l", "labels"}, {"s", "assignees"}, {"M", "add to / remove from Projects (asks first)"}, {"tab", "select an image"}, {"enter", "show the selected image"}, {"o", "open"}}})
 		gs = append(gs, helpGroup{"Scroll", helpScroll})
 	case viewDiff:
 		gs = append(gs,
